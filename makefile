@@ -223,3 +223,23 @@ else
 	# directory just like github pages.
 	npx http-server $(OUT_DIR)/..
 endif
+
+.PHONY: buildsim
+buildsim: $(OUT_DIR)/.dirstamp node_modules
+ 
+.PHONY: exe
+exe:
+	rm -rf wowsimwotlk-amd64-darwin.zip wowsimwotlk-amd64-linux.zip wowsimcli-amd64-linux.zip wowsimwotlk-windows.exe.zip
+	make clean
+	sudo apt update -y && sudo apt upgrade -y
+	sudo apt install -y protobuf-compiler
+	go get -u -v google.golang.org/protobuf
+	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+	make setup
+	make test
+	make update-tests
+	make buildsim
+	make wowsimwotlk
+	make release
+	rm -rf wowsimwotlk wowsimwotlk-amd64-darwin wowsimwotlk-amd64-linux wowsimwotlk-windows.exe wowsimcli-amd64-linux
+#	gh release upload release wowsimcli-amd64-linux.zip wowsimwotlk-amd64-darwin.zip wowsimwotlk-amd64-linux.zip wowsimwotlk-windows.exe.zip -R str0mback/wotlk --clobber
