@@ -242,4 +242,4 @@ exe:
 	make wowsimwotlk
 	make release
 	rm -rf wowsimwotlk wowsimwotlk-amd64-darwin wowsimwotlk-amd64-linux wowsimwotlk-windows.exe wowsimcli-amd64-linux
-#	gh release upload release wowsimcli-amd64-linux.zip wowsimwotlk-amd64-darwin.zip wowsimwotlk-amd64-linux.zip wowsimwotlk-windows.exe.zip -R str0mback/wotlk --clobber
+#	gh release upload wowsimwotlk-amd64-darwin.zip wowsimwotlk-amd64-linux.zip wowsimwotlk-windows.exe.zip -R str0mback/wotlk --clobber
