@@ -1,6 +1,5 @@
 import { ActionId } from './proto_utils/action_id.js';
 import { BattleElixir, HandType } from './proto/common.js';
-import { BonusStatsPicker } from './components/bonus_stats_picker.js';
 import { BooleanPicker, BooleanPickerConfig } from './components/boolean_picker.js';
 import { CharacterStats, StatMods } from './components/character_stats.js';
 import { Class } from './proto/common.js';
@@ -72,8 +71,6 @@ import { getTalentPoints } from './proto_utils/utils.js';
 import { isDualWieldSpec } from './proto_utils/utils.js';
 import { simLaunchStatuses } from './launched_sims.js';
 import { makePetTypeInputConfig } from './talents/hunter_pet.js';
-import { newIndividualExporters } from './components/exporters.js';
-import { newIndividualImporters } from './components/importers.js';
 import { newGlyphsPicker } from './talents/factory.js';
 import { newTalentsPicker } from './talents/factory.js';
 import { professionNames, raceNames } from './proto_utils/names.js';
@@ -83,6 +80,8 @@ import { specToLocalStorageKey } from './proto_utils/utils.js';
 
 import { Tooltip } from 'bootstrap';
 
+import * as Exporters from './components/exporters.js';
+import * as Importers from './components/importers.js';
 import * as IconInputs from './components/icon_inputs.js';
 import * as InputHelpers from './components/input_helpers.js';
 import * as Mechanics from './constants/mechanics.js';
@@ -372,23 +371,21 @@ export abstract class IndividualSimUI<SpecType extends Spec> extends SimUI {
 		this.addTab('Gear', 'gear-tab', `
 			<div class="gear-tab-columns">
 				<div class="left-gear-panel">
-					<div class="gear-picker">
-					</div>
+					<div class="gear-picker"></div>
 				</div>
 				<div class="right-gear-panel">
-					<div class="bonus-stats-picker">
-					</div>
-					<div class="saved-gear-manager">
-					</div>
+					<div class="saved-gear-manager"></div>
 				</div>
 			</div>
 		`);
 
 		const gearPicker = new GearPicker(this.rootElem.getElementsByClassName('gear-picker')[0] as HTMLElement, this.player);
-		const bonusStatsPicker = new BonusStatsPicker(this.rootElem.getElementsByClassName('bonus-stats-picker')[0] as HTMLElement, this.player, this.individualConfig.epStats);
 
 		const savedGearManager = new SavedDataManager<Player<any>, SavedGearSet>(this.rootElem.getElementsByClassName('saved-gear-manager')[0] as HTMLElement, this.player, {
-			label: 'Gear',
+			title: {
+				text: "Gear Sets"
+			},
+			label: 'Gear Set',
 			storageKey: this.getSavedGearStorageKey(),
 			getData: (player: Player<any>) => {
 				return SavedGearSet.create({
@@ -1115,8 +1112,14 @@ export abstract class IndividualSimUI<SpecType extends Spec> extends SimUI {
 	}
 
 	private addTopbarComponents() {
-		this.addImportLink(newIndividualImporters(this));
-		this.addExportLink(newIndividualExporters(this));
+		this.simHeader.addImportLink('JSON', parent => new Importers.IndividualJsonImporter(parent, this), true);
+		this.simHeader.addImportLink('80U', parent => new Importers.Individual80UImporter(parent, this), true);
+		this.simHeader.addImportLink('Addon', parent => new Importers.IndividualAddonImporter(parent, this), true);
+
+		this.simHeader.addExportLink('Link', parent => new Exporters.IndividualLinkExporter(parent, this), false);
+		this.simHeader.addExportLink('JSON', parent => new Exporters.IndividualJsonExporter(parent, this), true);
+		this.simHeader.addExportLink('80U EP', parent => new Exporters.Individual80UEPExporter(parent, this), false);
+		this.simHeader.addExportLink('Pawn EP', parent => new Exporters.IndividualPawnEPExporter(parent, this), false);
 	}
 
 	applyDefaults(eventID: EventID) {

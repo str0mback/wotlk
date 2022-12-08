@@ -151,7 +151,7 @@ export abstract class SimUI extends Component {
 
 	addAction(name: string, cssClass: string, actFn: () => void) {
 		const button = document.createElement('button');
-		button.classList.add('sim-sidebar-actions-button', 'btn', 'btn-outline-primary', cssClass);
+		button.classList.add('btn', 'btn-primary', 'w-100', cssClass);
 		button.textContent = name;
 		button.addEventListener('click', actFn);
 		this.simActionsContainer.appendChild(button);
@@ -175,14 +175,6 @@ export abstract class SimUI extends Component {
 
 	addWarning(warning: SimWarning) {
 		this.simHeader.addWarning(warning);
-	}
-
-	protected addImportLink(link: HTMLElement) {
-		this.simHeader.addImportLink(link);
-	}
-
-	protected addExportLink(link: HTMLElement) {
-		this.simHeader.addExportLink(link);
 	}
 
 	private addNoticeBanner() {
@@ -297,6 +289,7 @@ export abstract class SimUI extends Component {
 
 const simHTML = `
 <div class="sim-root">
+	<div id="simBgImage"></div>
 	<div id="noticesBanner" class="alert border-bottom mb-0 text-center">${noticeText}</div>
   <aside id="simSidebar">
     <div id="simTitle"></div>
