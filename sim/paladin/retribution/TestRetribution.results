@@ -245,8 +245,8 @@ dps_results: {
 dps_results: {
  key: "TestRetribution-AllItems-EyeoftheBroodmother-45308"
  value: {
-  dps: 5807.64206
-  tps: 5909.16172
+  dps: 5809.07335
+  tps: 5910.59301
   dtps: 9.92959
  }
 }
@@ -349,8 +349,8 @@ dps_results: {
 dps_results: {
  key: "TestRetribution-AllItems-InvigoratingEarthsiegeDiamond"
  value: {
-  dps: 5839.16079
-  tps: 5940.65264
+  dps: 5839.02539
+  tps: 5940.51724
   dtps: 9.92959
   hps: 11.51045
  }
@@ -774,8 +774,8 @@ dps_results: {
 dps_results: {
  key: "TestRetribution-Average-Default"
  value: {
-  dps: 5956.11189
-  tps: 6057.30116
+  dps: 5956.16279
+  tps: 6057.35214
   dtps: 13.81729
  }
 }
