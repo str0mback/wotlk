@@ -3,6 +3,7 @@ import { SettingsMenu } from './settings_menu';
 import { SimUI } from '../sim_ui';
 import { TypedEvent } from '../typed_event';
 import { Tooltip } from 'bootstrap';
+import { SimTab } from './sim_tab';
 
 // Config for displaying a warning to the user whenever a condition is met.
 interface SimWarning {
@@ -69,6 +70,16 @@ export class SimHeader extends Component {
 		`;
 
 		this.simTabsContainer.appendChild(tabFragment.children[0] as HTMLElement);
+	}
+
+	addSimTabLink(tab: SimTab) {
+		const isFirstTab = this.simTabsContainer.children.length == 0;
+
+		tab.navLink.setAttribute('aria-selected', isFirstTab.toString());
+
+		if (isFirstTab) tab.navLink.classList.add('active', 'show');
+		
+		this.simTabsContainer.appendChild(tab.navItem);
 	}
 
 	addImportLink(label: string, onClick: (parent: HTMLElement) => void, hideInRaidSim?: boolean) {
@@ -239,6 +250,7 @@ export class SimHeader extends Component {
 			parent: this.simToolbar,
 			icon: "fas fa-cog fa-lg",
 			tooltip: "Show Sim Options",
+			classes: 'sim-options',
 			onclick: () => new SettingsMenu(this.rootElem, this.simUI)
 		})
 	}
@@ -291,7 +303,7 @@ export class SimHeader extends Component {
 				<div class="import-export">
 					<fragment class="importFragment">
 						<div class="dropdown sim-dropdown-menu">
-							<a href="javascript:void(0)" class="import-link" role="button" data-bs-toggle="dropdown" data-bs-offset="0,0" aria-expanded="false" >
+							<a href="javascript:void(0)" class="import-link" role="button" data-bs-toggle="dropdown" data-bs-display="dynamic" aria-expanded="false">
 								<i class="fa fa-download"></i>
 								Import
 							</a>
@@ -300,7 +312,7 @@ export class SimHeader extends Component {
 					</fragment>
 					<fragment class="exportFragment">
 						<div class="dropdown sim-dropdown-menu">
-							<a href="javascript:void(0)" class="export-link" role="button" data-bs-toggle="dropdown" data-bs-offset="0,0" aria-expanded="false" >
+							<a href="javascript:void(0)" class="export-link" role="button" data-bs-toggle="dropdown" data-bs-display="dynamic" aria-expanded="false">
 								<i class="fa fa-right-from-bracket"></i>
 								Export
 							</a>

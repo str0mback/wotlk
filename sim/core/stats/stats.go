@@ -51,14 +51,20 @@ const (
 	FrostResistance
 	NatureResistance
 	ShadowResistance
+	BonusArmor
 	RunicPower
 	BloodRune
 	FrostRune
 	UnholyRune
 	DeathRune
+	// DO NOT add new stats here without discussing it first; new stats come with
+	// a performance penalty.
 
 	Len
 )
+
+var PseudoStatsLen = len(proto.PseudoStat_name)
+var UnitStatsLen = int(Len) + PseudoStatsLen
 
 type SchoolIndex byte
 
@@ -133,6 +139,8 @@ func (s Stat) StatName() string {
 		return "Rage"
 	case Armor:
 		return "Armor"
+	case BonusArmor:
+		return "BonusArmor"
 	case RangedAttackPower:
 		return "RangedAttackPower"
 	case Defense:
@@ -307,6 +315,10 @@ type PseudoStats struct {
 	//  This includes almost all "(Normalized) Weapon Damage", but also some "School Damage (Physical)" abilities.
 	BonusDamage float64 // Comes from '+X Weapon Damage' effects
 
+	BonusMHDps     float64
+	BonusOHDps     float64
+	BonusRangedDps float64
+
 	DisableDWMissPenalty bool    // Used by Heroic Strike and Cleave
 	IncreasedMissChance  float64 // Insect Swarm and Scorpid Sting
 	DodgeReduction       float64 // Used by Warrior talent 'Weapon Mastery' and SWP boss auras.
@@ -351,6 +363,7 @@ type PseudoStats struct {
 	BonusSpellHitRatingTaken    float64 // Imp FF
 
 	BonusPhysicalDamageTaken float64 // Hemo, Gift of Arthas, etc
+	BonusHealingTaken        float64 // Talisman of Troll Divinity
 
 	DamageTakenMultiplier       float64            // All damage
 	SchoolDamageTakenMultiplier [SchoolLen]float64 // For specific spell schools (arcane, fire, shadow, etc.)
@@ -401,3 +414,33 @@ func NewPseudoStats() PseudoStats {
 		HealingTakenMultiplier: 1,
 	}
 }
+
+type UnitStat int
+
+func (s UnitStat) IsStat() bool                                 { return int(s) < int(Len) }
+func (s UnitStat) IsPseudoStat() bool                           { return !s.IsStat() }
+func (s UnitStat) EqualsStat(other Stat) bool                   { return int(s) == int(other) }
+func (s UnitStat) EqualsPseudoStat(other proto.PseudoStat) bool { return int(s) == int(other) }
+func (s UnitStat) StatIdx() int {
+	if !s.IsStat() {
+		panic("Is a pseudo stat")
+	}
+	return int(s)
+}
+func (s UnitStat) PseudoStatIdx() int {
+	if s.IsStat() {
+		panic("Is a regular stat")
+	}
+	return int(s) - int(Len)
+}
+func (s UnitStat) AddToStatsProto(p *proto.UnitStats, value float64) {
+	if s.IsStat() {
+		p.Stats[s.StatIdx()] += value
+	} else {
+		p.PseudoStats[s.PseudoStatIdx()] += value
+	}
+}
+
+func UnitStatFromIdx(s int) UnitStat                     { return UnitStat(s) }
+func UnitStatFromStat(s Stat) UnitStat                   { return UnitStat(s) }
+func UnitStatFromPseudoStat(s proto.PseudoStat) UnitStat { return UnitStat(int(s) + int(Len)) }

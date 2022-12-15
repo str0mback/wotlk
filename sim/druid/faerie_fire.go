@@ -14,6 +14,7 @@ func (druid *Druid) registerFaerieFireSpell() {
 	gcd := core.GCDDefault
 	ignoreHaste := false
 	cd := core.Cooldown{}
+	flatThreatBonus := 66. * 2.
 
 	if druid.InForm(Cat | Bear) {
 		actionID = core.ActionID{SpellID: 16857}
@@ -25,9 +26,10 @@ func (druid *Druid) registerFaerieFireSpell() {
 			Timer:    druid.NewTimer(),
 			Duration: time.Second * 6,
 		}
+		flatThreatBonus = 632.
 	}
 
-	druid.FaerieFireAura = core.FaerieFireAura(druid.CurrentTarget, druid.Talents.ImprovedFaerieFire > 0)
+	druid.FaerieFireAura = core.FaerieFireAura(druid.CurrentTarget, druid.Talents.ImprovedFaerieFire)
 
 	druid.FaerieFire = druid.RegisterSpell(core.SpellConfig{
 		ActionID:     actionID,
@@ -46,7 +48,7 @@ func (druid *Druid) registerFaerieFireSpell() {
 		},
 
 		ThreatMultiplier: 1,
-		FlatThreatBonus:  66 * 2,
+		FlatThreatBonus:  flatThreatBonus,
 		DamageMultiplier: 1,
 		CritMultiplier:   druid.BalanceCritMultiplier(),
 
@@ -75,5 +77,5 @@ func (druid *Druid) ShouldFaerieFire(sim *core.Simulation) bool {
 		return false
 	}
 
-	return druid.CurrentTarget.ShouldRefreshAuraWithTagAtPriority(sim, core.MinorArmorReductionAuraTag, druid.FaerieFireAura.Priority, time.Second*3)
+	return druid.FaerieFireAura.ShouldRefreshExclusiveEffects(sim, time.Second*3)
 }

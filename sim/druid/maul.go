@@ -18,6 +18,7 @@ func (druid *Druid) registerMaulSpell(rageThreshold float64) {
 	}
 
 	numHits := core.TernaryInt32(druid.HasMajorGlyph(proto.DruidMajorGlyph_GlyphOfMaul) && druid.Env.GetNumTargets() > 1, 2, 1)
+	bleedCategory := druid.CurrentTarget.GetExclusiveEffectCategory(core.BleedEffectCategory)
 
 	druid.Maul = druid.RegisterSpell(core.SpellConfig{
 		ActionID:     core.ActionID{SpellID: 26996},
@@ -36,11 +37,11 @@ func (druid *Druid) registerMaulSpell(rageThreshold float64) {
 		DamageMultiplier: 1 + 0.1*float64(druid.Talents.SavageFury),
 		CritMultiplier:   druid.MeleeCritMultiplier(Bear),
 		ThreatMultiplier: 1,
-		FlatThreatBonus:  344,
+		FlatThreatBonus:  424,
 
 		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
 			modifier := 1.0
-			if druid.CurrentTarget.HasActiveAuraWithTag(core.BleedDamageAuraTag) {
+			if bleedCategory.AnyActive() {
 				modifier += .3
 			}
 			if druid.AssumeBleedActive || druid.RipDot.IsActive() || druid.RakeDot.IsActive() || druid.LacerateDot.IsActive() {

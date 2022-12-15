@@ -375,12 +375,8 @@ func init() {
 			BonusPerStack: stats.Stats{stats.SpellCrit: 44},
 		})
 
-		core.MakePermanent(druid.GetOrRegisterAura(core.Aura{
-			Label:    "Idol of the Lunar Eclipse",
-			Duration: core.NeverExpires,
-			OnReset: func(aura *core.Aura, sim *core.Simulation) {
-				aura.Activate(sim)
-			},
+		core.MakePermanent(druid.RegisterAura(core.Aura{
+			Label: "Idol of the Lunar Eclipse",
 			OnPeriodicDamageDealt: func(aura *core.Aura, sim *core.Simulation, spell *core.Spell, result *core.SpellResult) {
 				procAura.Activate(sim)
 				procAura.AddStack(sim)
@@ -389,15 +385,26 @@ func init() {
 	})
 
 	core.NewItemEffect(32387, func(agent core.Agent) {
-		// Idol of the Raven Goddess
-		// This should maybe be an Aura, but this way it changes stats on sheet
 		druid := agent.(DruidAgent).GetDruid()
-
-		if druid.InForm(Bear | Cat) {
-			druid.AddStat(stats.MeleeCrit, 40.0)
-		} else if druid.InForm(Moonkin) {
-			druid.AddStat(stats.SpellCrit, 40.0)
-		}
+		core.MakePermanent(druid.RegisterAura(core.Aura{
+			Label:      "Idol of the Raven Goddess",
+			BuildPhase: core.CharacterBuildPhaseGear,
+			OnGain: func(aura *core.Aura, sim *core.Simulation) {
+				// For now this assume we'll never leave main form
+				if druid.StartingForm.Matches(Bear | Cat) {
+					druid.AddStatDynamic(sim, stats.MeleeCrit, 40.0)
+				} else if druid.StartingForm.Matches(Moonkin) {
+					druid.AddStatDynamic(sim, stats.SpellCrit, 40.0)
+				}
+			},
+			OnExpire: func(aura *core.Aura, sim *core.Simulation) {
+				if druid.StartingForm.Matches(Bear | Cat) {
+					druid.AddStatDynamic(sim, stats.MeleeCrit, -40.0)
+				} else if druid.StartingForm.Matches(Moonkin) {
+					druid.AddStatDynamic(sim, stats.SpellCrit, -40.0)
+				}
+			},
+		}))
 	})
 
 	//core.NewItemEffect(37573, func(agent core.Agent) {
@@ -432,14 +439,20 @@ func init() {
 	core.NewItemEffect(45509, func(agent core.Agent) {
 		druid := agent.(DruidAgent).GetDruid()
 		actionID := core.ActionID{ItemID: 45509}
-		procAura := druid.NewTemporaryStatsAura("Idol of the Corruptor Proc", actionID, stats.Stats{stats.Agility: 153}, time.Second*12)
+		procAura := druid.NewTemporaryStatsAura("Idol of the Corruptor Proc", actionID, stats.Stats{stats.Agility: 162}, time.Second*12)
 
-		// This proc chance might be wrong, going off of wowhead notes
-		procChance := 0.85
+		// This proc chance may need confirmation, going off of 'Idol of Terror' values currently
+		procChanceBear := 0.50
+		procChanceCat := 0.85
 		core.MakePermanent(druid.RegisterAura(core.Aura{
 			Label: "Idol of the Corruptor",
 			OnSpellHitDealt: func(aura *core.Aura, sim *core.Simulation, spell *core.Spell, result *core.SpellResult) {
-				if !druid.IsMangle(spell) {
+				procChance := 0.0
+				if spell == druid.MangleBear {
+					procChance = procChanceBear
+				} else if spell == druid.MangleCat {
+					procChance = procChanceCat
+				} else {
 					return
 				}
 

@@ -24,7 +24,7 @@ message Player {
 
 	EquipmentSpec equipment = 3;
 	Consumes consumes = 4;
-	repeated double bonus_stats = 5;
+	UnitStats bonus_stats = 36;
 
 	IndividualBuffs buffs = 15;
 
@@ -95,6 +95,7 @@ message SimOptions {
 	bool debug = 3; // Enables debug logging.
 	bool debug_first_iteration = 6;
 	bool is_test = 5; // Only used internally.
+	bool save_all_values = 7; // Only used internally.
 }
 
 // The aggregated results from all uses of a particular action.
@@ -202,6 +203,7 @@ message DistributionMetrics {
 	double min     = 6;
 	int64 minSeed = 7;
 	map<int32, int32> hist = 4;
+	repeated double all_values = 8;
 }
 
 // All the results for a single Unit (player, target, or pet).
@@ -210,6 +212,7 @@ message UnitMetrics {
 	int32 unit_index = 13;
 
 	DistributionMetrics dps = 1;
+	DistributionMetrics dpasp = 16;
 	DistributionMetrics threat = 8;
 	DistributionMetrics dtps = 11;
 	DistributionMetrics hps = 14;
@@ -276,13 +279,12 @@ message ComputeStatsRequest {
 }
 message PlayerStats {
 	// Stats
-	repeated double base_stats = 6;
-	repeated double gear_stats = 1;
-	repeated double talents_stats = 7;
-	repeated double form_stats = 10;
-	repeated double buffs_stats = 8;
-	repeated double consumes_stats = 9;
-	repeated double final_stats = 2;
+	UnitStats base_stats = 6;
+	UnitStats gear_stats = 1;
+	UnitStats talents_stats = 7;
+	UnitStats buffs_stats = 8;
+	UnitStats consumes_stats = 9;
+	UnitStats final_stats = 2;
 
 	repeated string sets = 3;
 	IndividualBuffs buffs = 4;
@@ -310,6 +312,7 @@ message StatWeightsRequest {
 	repeated RaidTarget tanks = 8;
 
 	repeated Stat stats_to_weigh = 6;
+	repeated PseudoStat pseudo_stats_to_weigh = 10;
 	Stat ep_reference_stat = 7;
 }
 message StatWeightsResult {
@@ -319,10 +322,10 @@ message StatWeightsResult {
 	StatWeightValues dtps = 3;
 }
 message StatWeightValues {
-	repeated double weights = 1;
-	repeated double weights_stdev = 2;
-	repeated double ep_values = 3;
-	repeated double ep_values_stdev = 4;
+	UnitStats weights = 1;
+	UnitStats weights_stdev = 2;
+	UnitStats ep_values = 3;
+	UnitStats ep_values_stdev = 4;
 }
 
 message AsyncAPIResult {
