@@ -27,6 +27,14 @@ type Weapon struct {
 	SpellSchool                SpellSchool
 }
 
+func (w Weapon) DPS() float64 {
+	if w.SwingSpeed == 0 {
+		return 0
+	} else {
+		return (w.BaseDamageMin + w.BaseDamageMax) / 2.0 / w.SwingSpeed
+	}
+}
+
 func (w Weapon) WithBonusDPS(bonusDps float64) Weapon {
 	newWeapon := w
 	bonusSwingDamage := bonusDps * w.SwingSpeed
@@ -290,13 +298,6 @@ func (unit *Unit) EnableAutoAttacks(agent Agent, options AutoAttackOptions) {
 		ProcMask:    ProcMaskRangedAuto,
 		Flags:       SpellFlagMeleeMetrics | SpellFlagIncludeTargetBonusDamage,
 
-		Cast: CastConfig{
-			IgnoreHaste: true,
-			AfterCast: func(sim *Simulation, spell *Spell) {
-				agent.OnAutoAttack(sim, unit.AutoAttacks.RangedAuto)
-			},
-		},
-
 		DamageMultiplier: 1,
 		CritMultiplier:   options.Ranged.CritMultiplier,
 		ThreatMultiplier: 1,
@@ -305,6 +306,7 @@ func (unit *Unit) EnableAutoAttacks(agent Agent, options AutoAttackOptions) {
 			baseDamage := spell.Unit.RangedWeaponDamage(sim, spell.RangedAttackPower(target)) +
 				spell.BonusWeaponDamage()
 			spell.CalcAndDealDamage(sim, target, baseDamage, spell.OutcomeRangedHitAndCrit)
+			agent.OnAutoAttack(sim, unit.AutoAttacks.RangedAuto)
 		},
 	}
 
