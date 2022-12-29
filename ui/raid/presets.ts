@@ -347,10 +347,10 @@ export const playerPresets: Array<PresetSpecSettings<any>> = [
 		defaultGear: {
 			[Faction.Unknown]: {},
 			[Faction.Alliance]: {
-				1: MagePresets.P1_ARCANE_PRESET.gear,
+				1: MagePresets.ARCANE_P1_PRESET.gear,
 			},
 			[Faction.Horde]: {
-				1: MagePresets.P1_ARCANE_PRESET.gear,
+				1: MagePresets.ARCANE_P1_PRESET.gear,
 			},
 		},
 		tooltip: 'Arcane Mage',
@@ -371,10 +371,10 @@ export const playerPresets: Array<PresetSpecSettings<any>> = [
 		defaultGear: {
 			[Faction.Unknown]: {},
 			[Faction.Alliance]: {
-				1: MagePresets.P1_FIRE_PRESET.gear,
+				1: MagePresets.FIRE_P1_PRESET.gear,
 			},
 			[Faction.Horde]: {
-				1: MagePresets.P1_FIRE_PRESET.gear,
+				1: MagePresets.FIRE_P1_PRESET.gear,
 			},
 		},
 		tooltip: 'Fire Mage',
@@ -395,10 +395,10 @@ export const playerPresets: Array<PresetSpecSettings<any>> = [
 		defaultGear: {
 			[Faction.Unknown]: {},
 			[Faction.Alliance]: {
-				1: MagePresets.P1_FROST_PRESET.gear,
+				1: MagePresets.FROST_P1_PRESET.gear,
 			},
 			[Faction.Horde]: {
-				1: MagePresets.P1_FROST_PRESET.gear,
+				1: MagePresets.FROST_P1_PRESET.gear,
 			},
 		},
 		tooltip: 'Frost Mage',
@@ -889,25 +889,6 @@ export const buffBotPresets: Array<BuffBotSettings> = [
 	},
 	{
 		// The value of this field must never change, to preserve local storage data.
-		buffBotId: 'Rogue',
-		spec: Spec.SpecShadowPriest,
-		name: 'Rogue',
-		tooltip: 'Rogue: Adds TotT.',
-		iconUrl: 'https://wow.zamimg.com/images/wow/icons/large/ability_rogue_tricksofthetrade.jpg',
-		modifyRaidProto: (buffBot: BuffBot, raidProto: RaidProto, partyProto: PartyProto) => {
-			const tricksOfTheTradeIndex = buffBot.getTricksOfTheTradeAssignment().targetIndex;
-			if (tricksOfTheTradeIndex != NO_TARGET) {
-				const partyIndex = Math.floor(tricksOfTheTradeIndex / 5);
-				const playerIndex = tricksOfTheTradeIndex % 5;
-				const playerProto = raidProto.parties[partyIndex].players[playerIndex];
-				if (playerProto.buffs) {
-					playerProto.buffs.tricksOfTheTrades++;
-				}
-			}
-		},
-	},
-	{
-		// The value of this field must never change, to preserve local storage data.
 		buffBotId: 'Resto Shaman',
 		spec: Spec.SpecElementalShaman,
 		name: 'Resto Shaman',
@@ -994,12 +975,16 @@ export const buffBotPresets: Array<BuffBotSettings> = [
 	},
 	{
 		// The value of this field must never change, to preserve local storage data.
-		buffBotId: 'Unholy Frenzy Dk',
-		spec: Spec.SpecDeathknight,
+		buffBotId: 'Blood DK Tank',
+		spec: Spec.SpecTankDeathknight,
 		name: 'Blood DK',
-		tooltip: 'Deathknight: Adds Unholy Frenzy.',
+		tooltip: 'Blood Deathknight: Adds Horn of Winter, Abominations Might, and Unholy Frenzy.',
 		iconUrl: 'https://wow.zamimg.com/images/wow/icons/large/spell_deathknight_bladedarmor.jpg',
 		modifyRaidProto: (buffBot: BuffBot, raidProto: RaidProto, partyProto: PartyProto) => {
+			const buffs = raidProto.buffs!;
+			buffs.hornOfWinter = true;
+			buffs.abominationsMight = true;
+
 			const unholyFrenzyIndex = buffBot.getUnholyFrenzyAssignment().targetIndex;
 			if (unholyFrenzyIndex != NO_TARGET) {
 				const partyIndex = Math.floor(unholyFrenzyIndex / 5);
