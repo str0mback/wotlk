@@ -46,7 +46,7 @@ func (cat *FeralDruid) OnAutoAttack(sim *core.Simulation, spell *core.Spell) {
 	// If the swing/Maul resulted in an Omen proc, then schedule the
 	// next player decision based on latency.
 
-	if cat.ClearcastingAura.RemainingDuration(sim) == cat.ClearcastingAura.Duration {
+	if cat.Talents.OmenOfClarity && cat.ClearcastingAura.RemainingDuration(sim) == cat.ClearcastingAura.Duration {
 		// Kick gcd loop, also need to account for any gcd 'left'
 		// otherwise it breaks gcd logic
 		kickTime := core.MaxDuration(cat.NextGCDAt(), sim.CurrentTime+cat.latency)
@@ -314,7 +314,7 @@ func (cat *FeralDruid) doRotation(sim *core.Simulation) {
 	// *unless* we'll lose Berserk uptime by waiting for Tiger's Fury to
 	// come off cooldown. The latter exception is necessary for
 	// Lacerateweave rotation since TF timings can drift over time.
-	waitForTf := (cat.TigersFury.ReadyAt() <= cat.BerserkAura.Duration) && (cat.TigersFury.ReadyAt()+time.Second < sim.GetRemainingDuration()-cat.BerserkAura.Duration)
+	waitForTf := cat.Talents.Berserk && (cat.TigersFury.ReadyAt() <= cat.BerserkAura.Duration) && (cat.TigersFury.ReadyAt()+time.Second < sim.GetRemainingDuration()-cat.BerserkAura.Duration)
 	berserkNow := cat.Berserk.IsReady(sim) && !waitForTf
 
 	// Additionally, for Lacerateweave rotation, postpone the final Berserk

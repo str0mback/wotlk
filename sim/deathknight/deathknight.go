@@ -17,6 +17,8 @@ const (
 	FuStrike_Obliterate    Rotation_FuStrike = 2
 )
 
+var TalentTreeSizes = [3]int{28, 29, 31}
+
 type DeathknightInputs struct {
 	// Option Vars
 	IsDps bool
@@ -64,8 +66,10 @@ type Deathknight struct {
 	Ghoul     *GhoulPet
 	RaiseDead *RuneSpell
 
-	Gargoyle       *GargoylePet
-	SummonGargoyle *RuneSpell
+	Gargoyle                 *GargoylePet
+	SummonGargoyle           *RuneSpell
+	GargoyleSummonDelay      time.Duration
+	OnGargoyleStartFirstCast func()
 
 	RuneWeapon        *RuneWeaponPet
 	DancingRuneWeapon *RuneSpell
@@ -146,6 +150,8 @@ type Deathknight struct {
 
 	BoneShield     *RuneSpell
 	BoneShieldAura *core.Aura
+
+	UnholyFrenzy *core.Spell
 
 	IceboundFortitude     *RuneSpell
 	IceboundFortitudeAura *core.Aura
@@ -358,13 +364,14 @@ func (dk *Deathknight) HasMinorGlyph(glyph proto.DeathknightMinorGlyph) bool {
 	return dk.HasGlyph(int32(glyph))
 }
 
-func NewDeathknight(character core.Character, talents *proto.DeathknightTalents, inputs DeathknightInputs) *Deathknight {
+func NewDeathknight(character core.Character, inputs DeathknightInputs, talents string) *Deathknight {
 	dk := &Deathknight{
 		Character:  character,
-		Talents:    talents,
+		Talents:    &proto.DeathknightTalents{},
 		Inputs:     inputs,
 		RoRTSBonus: func(u *core.Unit) float64 { return 1.0 }, // default to no bonus for RoR/TS
 	}
+	core.FillTalentsProto(dk.Talents.ProtoReflect(), talents, TalentTreeSizes)
 
 	maxRunicPower := 100.0 + 15.0*float64(dk.Talents.RunicPowerMastery)
 	currentRunicPower := math.Min(maxRunicPower, dk.Inputs.StartingRunicPower+core.TernaryFloat64(dk.Inputs.PrecastHornOfWinter, 10.0, 0.0))
@@ -412,9 +419,8 @@ func NewDeathknight(character core.Character, talents *proto.DeathknightTalents,
 	dk.PseudoStats.MeleeHasteRatingPerHastePercent /= 1.3
 
 	dk.Ghoul = dk.NewGhoulPet(dk.Talents.MasterOfGhouls)
-	if dk.Talents.SummonGargoyle {
-		dk.Gargoyle = dk.NewGargoyle()
-	}
+	dk.OnGargoyleStartFirstCast = func() {}
+	dk.GargoyleSummonDelay = time.Millisecond * 2500
 
 	dk.ArmyGhoul = make([]*GhoulPet, 8)
 	for i := 0; i < 8; i++ {

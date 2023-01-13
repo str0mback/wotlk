@@ -16,7 +16,7 @@ message DeathknightTalents {
 	bool rune_tap = 7;
 	int32 dark_conviction = 8;
 	int32 death_rune_mastery = 9;
-    int32 improved_rune_tap = 10;
+	int32 improved_rune_tap = 10;
 	int32 spell_deflection = 11;
 	int32 vendetta = 12;
 	int32 bloody_strikes = 13;
@@ -238,10 +238,12 @@ message Deathknight {
 		bool hold_erw_army = 22;
 		
 		bool use_gargoyle = 23;
+
+		bool nerfed_gargoyle = 24;
+
+		Presence gargoyle_presence = 25;
 	}
 	Rotation rotation = 1;
-
-	DeathknightTalents talents = 2;
 	
 	message Options {
 		double starting_runic_power = 1;
@@ -287,8 +289,6 @@ message TankDeathknight {
 		BloodSpell blood_spell = 3;
 	}
 	Rotation rotation = 1;
-
-	DeathknightTalents talents = 2;
 	
 	message Options {
 		double starting_runic_power = 1;

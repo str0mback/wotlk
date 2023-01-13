@@ -12,22 +12,21 @@ import (
 
 func (druid *Druid) registerMoonfireSpell() {
 	actionID := core.ActionID{SpellID: 48463}
-	baseCost := 0.21 * druid.BaseMana
-
 	numTicks := druid.moonfireTicks()
 
 	druid.Moonfire = druid.RegisterSpell(core.SpellConfig{
-		ActionID:     core.ActionID{SpellID: 48463},
-		SpellSchool:  core.SpellSchoolArcane,
-		ProcMask:     core.ProcMaskSpellDamage,
-		Flags:        SpellFlagNaturesGrace,
-		ResourceType: stats.Mana,
-		BaseCost:     baseCost,
+		ActionID:    actionID,
+		SpellSchool: core.SpellSchoolArcane,
+		ProcMask:    core.ProcMaskSpellDamage,
+		Flags:       SpellFlagNaturesGrace | SpellFlagOmenTrigger,
 
+		ManaCost: core.ManaCostOptions{
+			BaseCost:   0.21,
+			Multiplier: 1 - 0.03*float64(druid.Talents.Moonglow),
+		},
 		Cast: core.CastConfig{
 			DefaultCast: core.Cast{
-				Cost: baseCost * (1 - 0.03*float64(druid.Talents.Moonglow)),
-				GCD:  core.GCDDefault,
+				GCD: core.GCDDefault,
 			},
 		},
 
@@ -53,9 +52,26 @@ func (druid *Druid) registerMoonfireSpell() {
 
 	starfireBonusCrit := float64(druid.Talents.ImprovedInsectSwarm) * core.CritRatingPerCritChance
 	dotCanCrit := druid.HasSetBonus(ItemSetMalfurionsRegalia, 2)
+	var applyLunarFire func(*core.Simulation)
+
+	if druid.Equip[proto.ItemSlot_ItemSlotRanged].ID == 47670 {
+		icd := core.Cooldown{
+			Timer:    druid.NewTimer(),
+			Duration: time.Second * 6,
+		}
+		aura := druid.NewTemporaryStatsAura("Lunar Fire", core.ActionID{SpellID: 67360}, stats.Stats{stats.MeleeCrit: 200, stats.SpellCrit: 200}, time.Second*12)
+		applyLunarFire = func(sim *core.Simulation) {
+			if !icd.IsReady(sim) || sim.RandomFloat("lunar fire") > 0.7 {
+				return
+			}
+			aura.Activate(sim)
+			icd.Use(sim)
+		}
+	}
+
 	druid.MoonfireDot = core.NewDot(core.Dot{
 		Spell: druid.RegisterSpell(core.SpellConfig{
-			ActionID:    core.ActionID{SpellID: 48463},
+			ActionID:    actionID,
 			SpellSchool: core.SpellSchoolArcane,
 			ProcMask:    core.ProcMaskSpellDamage,
 
@@ -92,6 +108,9 @@ func (druid *Druid) registerMoonfireSpell() {
 				dot.CalcAndDealPeriodicSnapshotDamage(sim, target, dot.OutcomeSnapshotCrit)
 			} else {
 				dot.CalcAndDealPeriodicSnapshotDamage(sim, target, dot.OutcomeTick)
+			}
+			if applyLunarFire != nil {
+				applyLunarFire(sim)
 			}
 		},
 	})

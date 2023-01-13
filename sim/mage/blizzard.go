@@ -4,12 +4,10 @@ import (
 	"time"
 
 	"github.com/wowsims/wotlk/sim/core"
-	"github.com/wowsims/wotlk/sim/core/stats"
 )
 
 func (mage *Mage) registerBlizzardSpell() {
 	actionID := core.ActionID{SpellID: 42939}
-	baseCost := .74 * mage.BaseMana
 
 	results := make([]*core.SpellResult, len(mage.Env.Encounter.Targets))
 	blizzardDot := core.NewDot(core.Dot{
@@ -22,7 +20,7 @@ func (mage *Mage) registerBlizzardSpell() {
 		AffectedByCastSpeed: true,
 		OnSnapshot: func(sim *core.Simulation, _ *core.Unit, dot *core.Dot, _ bool) {
 			target := mage.CurrentTarget
-			dot.SnapshotBaseDamage = 352 + 0.119*dot.Spell.SpellPower()
+			dot.SnapshotBaseDamage = 426 + (4.0/3.5/8)*dot.Spell.SpellPower()
 			dot.SnapshotBaseDamage *= sim.Encounter.AOECapMultiplier()
 			dot.SnapshotAttackerMultiplier = dot.Spell.AttackerDamageMultiplier(dot.Spell.Unit.AttackTables[target.UnitIndex])
 		},
@@ -37,23 +35,22 @@ func (mage *Mage) registerBlizzardSpell() {
 	})
 
 	mage.Blizzard = mage.RegisterSpell(core.SpellConfig{
-		ActionID:     actionID,
-		SpellSchool:  core.SpellSchoolFrost,
-		ProcMask:     core.ProcMaskSpellDamage,
-		Flags:        SpellFlagMage | core.SpellFlagChanneled,
-		ResourceType: stats.Mana,
-		BaseCost:     baseCost,
+		ActionID:    actionID,
+		SpellSchool: core.SpellSchoolFrost,
+		ProcMask:    core.ProcMaskSpellDamage,
+		Flags:       SpellFlagMage | core.SpellFlagChanneled,
 
+		ManaCost: core.ManaCostOptions{
+			BaseCost: 0.74,
+		},
 		Cast: core.CastConfig{
 			DefaultCast: core.Cast{
-				Cost: baseCost,
-
 				GCD:         core.GCDDefault,
 				ChannelTime: time.Second * 8,
 			},
 		},
 
-		DamageMultiplier: mage.spellDamageMultiplier,
+		DamageMultiplier: 1,
 		ThreatMultiplier: 1 - (0.1/3)*float64(mage.Talents.FrostChanneling),
 
 		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {

@@ -6,12 +6,12 @@ import (
 
 	"github.com/wowsims/wotlk/sim/core"
 	"github.com/wowsims/wotlk/sim/core/proto"
-	"github.com/wowsims/wotlk/sim/core/stats"
 )
 
 func (mage *Mage) registerLivingBombSpell() {
-	baseCost := .22 * mage.BaseMana
-	bonusCrit := float64(mage.Talents.WorldInFlames+mage.Talents.CriticalMass) * 2 * core.CritRatingPerCritChance
+	if !mage.Talents.LivingBomb {
+		return
+	}
 
 	livingBombExplosionSpell := mage.RegisterSpell(core.SpellConfig{
 		ActionID:    core.ActionID{SpellID: 55362},
@@ -19,8 +19,11 @@ func (mage *Mage) registerLivingBombSpell() {
 		ProcMask:    core.ProcMaskSpellDamage,
 		Flags:       SpellFlagMage | HotStreakSpells,
 
-		BonusCritRating:  bonusCrit,
-		DamageMultiplier: mage.spellDamageMultiplier,
+		BonusCritRating: 0 +
+			2*float64(mage.Talents.WorldInFlames)*core.CritRatingPerCritChance +
+			2*float64(mage.Talents.CriticalMass)*core.CritRatingPerCritChance,
+		DamageMultiplierAdditive: 1 +
+			.02*float64(mage.Talents.FirePower),
 		CritMultiplier:   mage.SpellCritMultiplier(1, mage.bonusCritDamage),
 		ThreatMultiplier: 1 - 0.1*float64(mage.Talents.BurningSoul),
 
@@ -34,22 +37,25 @@ func (mage *Mage) registerLivingBombSpell() {
 	})
 
 	mage.LivingBomb = mage.RegisterSpell(core.SpellConfig{
-		ActionID:     core.ActionID{SpellID: 55360},
-		SpellSchool:  core.SpellSchoolFire,
-		ProcMask:     core.ProcMaskSpellDamage,
-		Flags:        SpellFlagMage,
-		ResourceType: stats.Mana,
-		BaseCost:     baseCost,
+		ActionID:    core.ActionID{SpellID: 55360},
+		SpellSchool: core.SpellSchoolFire,
+		ProcMask:    core.ProcMaskSpellDamage,
+		Flags:       SpellFlagMage,
 
+		ManaCost: core.ManaCostOptions{
+			BaseCost: 0.22,
+		},
 		Cast: core.CastConfig{
 			DefaultCast: core.Cast{
-				Cost: baseCost,
-				GCD:  core.GCDDefault,
+				GCD: core.GCDDefault,
 			},
 		},
 
-		BonusCritRating:  bonusCrit,
-		DamageMultiplier: mage.spellDamageMultiplier,
+		// WorldInFlames doesn't apply to DoT component.
+		BonusCritRating: 0 +
+			2*float64(mage.Talents.CriticalMass)*core.CritRatingPerCritChance,
+		DamageMultiplierAdditive: 1 +
+			.02*float64(mage.Talents.FirePower),
 		CritMultiplier:   mage.SpellCritMultiplier(1, mage.bonusCritDamage),
 		ThreatMultiplier: 1 - 0.1*float64(mage.Talents.BurningSoul),
 

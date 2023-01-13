@@ -8,6 +8,8 @@ import (
 	"github.com/wowsims/wotlk/sim/core/stats"
 )
 
+var TalentTreeSizes = [3]int{28, 27, 26}
+
 type Warlock struct {
 	core.Character
 	Talents  *proto.WarlockTalents
@@ -170,7 +172,7 @@ func (warlock *Warlock) Prepull(sim *core.Simulation) {
 		warlock.SpiritsoftheDamnedAura.UpdateExpires(warlock.SpiritsoftheDamnedAura.Duration - delay)
 	}
 
-	warlock.SpendMana(sim, spellChoice.DefaultCast.Cost, spellChoice.ResourceMetrics)
+	warlock.SpendMana(sim, spellChoice.DefaultCast.Cost, spellChoice.Cost.(*core.ManaCost).ResourceMetrics)
 	spellChoice.CD.UsePrePull(sim, warlock.ApplyCastSpeed(spellChoice.DefaultCast.CastTime))
 	spellChoice.SkipCastAndApplyEffects(sim, warlock.CurrentTarget)
 }
@@ -186,11 +188,12 @@ func NewWarlock(character core.Character, options *proto.Player) *Warlock {
 
 	warlock := &Warlock{
 		Character: character,
-		Talents:   warlockOptions.Talents,
+		Talents:   &proto.WarlockTalents{},
 		Options:   warlockOptions.Options,
 		Rotation:  warlockOptions.Rotation,
 		// manaTracker:           common.NewManaSpendingRateTracker(),
 	}
+	core.FillTalentsProto(warlock.Talents.ProtoReflect(), options.TalentsString, TalentTreeSizes)
 	warlock.EnableManaBar()
 
 	warlock.AddStatDependency(stats.Strength, stats.AttackPower, 1)

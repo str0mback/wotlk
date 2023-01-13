@@ -36,17 +36,14 @@ func NewTankDeathknight(character core.Character, options *proto.Player) *TankDe
 	dkOptions := options.GetTankDeathknight()
 
 	tankDk := &TankDeathknight{
-		Deathknight: deathknight.NewDeathknight(character, dkOptions.Talents, deathknight.DeathknightInputs{
+		Deathknight: deathknight.NewDeathknight(character, deathknight.DeathknightInputs{
 			IsDps:              false,
 			StartingRunicPower: dkOptions.Options.StartingRunicPower,
-		}),
+		}, options.TalentsString),
 		Rotation: dkOptions.Rotation,
 	}
 
-	dkOptions.Options.UnholyFrenzyTarget = &proto.RaidTarget{TargetIndex: -1}
-	if dkOptions.Options.UnholyFrenzyTarget != nil {
-		tankDk.Inputs.UnholyFrenzyTarget = dkOptions.Options.UnholyFrenzyTarget
-	}
+	tankDk.Inputs.UnholyFrenzyTarget = dkOptions.Options.UnholyFrenzyTarget
 
 	tankDk.EnableAutoAttacks(tankDk, core.AutoAttackOptions{
 		MainHand:       tankDk.WeaponFromMainHand(tankDk.DefaultMeleeCritMultiplier()),
