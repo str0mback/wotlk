@@ -1,7 +1,6 @@
 package paladin
 
 import (
-	"strconv"
 	"time"
 
 	"github.com/wowsims/wotlk/sim/core"
@@ -28,6 +27,7 @@ func (paladin *Paladin) RegisterAvengingWrathCD() {
 			aura.Unit.PseudoStats.DamageDealtMultiplier /= 1.2
 		},
 	})
+	core.RegisterPercentDamageModifierEffect(paladin.AvengingWrathAura, 1.2)
 
 	paladin.AvengingWrath = paladin.RegisterSpell(core.SpellConfig{
 		ActionID: actionID,
@@ -54,9 +54,6 @@ func (paladin *Paladin) RegisterAvengingWrathCD() {
 	paladin.AddMajorCooldown(core.MajorCooldown{
 		Spell: paladin.AvengingWrath,
 		Type:  core.CooldownTypeDPS,
-		CanActivate: func(sim *core.Simulation, character *core.Character) bool {
-			return character.CurrentMana() >= paladin.AvengingWrath.DefaultCast.Cost
-		},
 		// modify this logic if it should ever not be spammed on CD / maybe should synced with other CDs
 		ShouldActivate: func(sim *core.Simulation, character *core.Character) bool {
 			if paladin.HoldLastAvengingWrathUntilExecution && float64(sim.CurrentTime+paladin.AvengingWrath.CD.Duration) >= float64(sim.Duration) {
@@ -68,7 +65,7 @@ func (paladin *Paladin) RegisterAvengingWrathCD() {
 			}
 
 			if paladin.CurrentSeal == paladin.SealOfVengeanceAura {
-				if paladin.CurrentTarget.GetAura("Holy Vengeance (DoT) -"+strconv.Itoa(int(paladin.Index))).GetStacks() < 5 {
+				if paladin.SovDotSpell.Dot(paladin.CurrentTarget).GetStacks() < 5 {
 					return false
 				}
 			}

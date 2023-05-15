@@ -4,43 +4,33 @@ import (
 	"time"
 
 	"github.com/wowsims/wotlk/sim/core"
-	"github.com/wowsims/wotlk/sim/core/stats"
 )
 
 var IcyTouchActionID = core.ActionID{SpellID: 59131}
 
 func (dk *Deathknight) registerIcyTouchSpell() {
-	dk.FrostFeverDebuffAura = make([]*core.Aura, dk.Env.GetNumTargets())
-	for _, encounterTarget := range dk.Env.Encounter.Targets {
-		target := &encounterTarget.Unit
+	dk.FrostFeverDebuffAura = make([]*core.Aura, len(dk.Env.Encounter.TargetUnits))
+	for i, target := range dk.Env.Encounter.TargetUnits {
 		ffAura := core.FrostFeverAura(target, dk.Talents.ImprovedIcyTouch)
 		ffAura.Duration = time.Second*15 + (time.Second * 3 * time.Duration(dk.Talents.Epidemic))
-		dk.FrostFeverDebuffAura[target.Index] = ffAura
+		dk.FrostFeverDebuffAura[i] = ffAura
 	}
 
 	sigilBonus := dk.sigilOfTheFrozenConscienceBonus()
-	amountOfRunicPower := 10.0 + 2.5*float64(dk.Talents.ChillOfTheGrave)
-	baseCost := float64(core.NewRuneCost(uint8(amountOfRunicPower), 0, 1, 0, 0))
 
-	sigilOfTheUnfalteringKnight := dk.sigilOfTheUnfalteringKnight()
+	dk.IcyTouch = dk.RegisterSpell(core.SpellConfig{
+		ActionID:    IcyTouchActionID,
+		SpellSchool: core.SpellSchoolFrost,
+		ProcMask:    core.ProcMaskSpellDamage,
 
-	rs := &RuneSpell{
-		Refundable: true,
-	}
-	dk.IcyTouch = dk.RegisterSpell(rs, core.SpellConfig{
-		ActionID:     IcyTouchActionID,
-		SpellSchool:  core.SpellSchoolFrost,
-		ProcMask:     core.ProcMaskSpellDamage,
-		ResourceType: stats.RunicPower,
-		BaseCost:     baseCost,
-
+		RuneCost: core.RuneCostOptions{
+			FrostRuneCost:  1,
+			RunicPowerGain: 10 + 2.5*float64(dk.Talents.ChillOfTheGrave),
+			Refundable:     true,
+		},
 		Cast: core.CastConfig{
 			DefaultCast: core.Cast{
-				Cost: baseCost,
-				GCD:  core.GCDDefault,
-			},
-			ModifyCast: func(sim *core.Simulation, spell *core.Spell, cast *core.Cast) {
-				cast.GCD = dk.GetModifiedGCD()
+				GCD: core.GCDDefault,
 			},
 		},
 
@@ -56,23 +46,17 @@ func (dk *Deathknight) registerIcyTouchSpell() {
 				dk.mercilessCombatBonus(sim)
 
 			result := spell.CalcDamage(sim, target, baseDamage, spell.OutcomeMagicHitAndCrit)
-			rs.OnResult(sim, result)
+			spell.SpendRefundableCost(sim, result)
 
 			dk.LastOutcome = result.Outcome
 			if result.Landed() {
 				dk.FrostFeverExtended[target.Index] = 0
 				dk.FrostFeverSpell.Cast(sim, target)
-
-				if sigilOfTheUnfalteringKnight != nil {
-					sigilOfTheUnfalteringKnight.Activate(sim)
-				}
 			}
 
 			spell.DealDamage(sim, result)
 		},
-	}, func(sim *core.Simulation) bool {
-		return dk.CastCostPossible(sim, 0.0, 0, 1, 0) && dk.IcyTouch.IsReady(sim)
-	}, nil)
+	})
 }
 func (dk *Deathknight) registerDrwIcyTouchSpell() {
 	sigilBonus := dk.sigilOfTheFrozenConscienceBonus()
@@ -81,11 +65,12 @@ func (dk *Deathknight) registerDrwIcyTouchSpell() {
 		ActionID:    IcyTouchActionID,
 		SpellSchool: core.SpellSchoolFrost,
 		ProcMask:    core.ProcMaskSpellDamage,
+		//Flags:       core.SpellFlagIgnoreAttackerModifiers,
 
 		BonusCritRating:  dk.rimeCritBonus() * core.CritRatingPerCritChance,
 		DamageMultiplier: 1 + 0.05*float64(dk.Talents.ImprovedIcyTouch),
-		CritMultiplier:   dk.RuneWeapon.DefaultMeleeCritMultiplier(),
-		ThreatMultiplier: 7,
+		CritMultiplier:   dk.DefaultMeleeCritMultiplier(),
+		ThreatMultiplier: 1,
 
 		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
 			baseDamage := sim.Roll(227, 245) + sigilBonus + 0.1*dk.RuneWeapon.getImpurityBonus(spell)
@@ -97,4 +82,9 @@ func (dk *Deathknight) registerDrwIcyTouchSpell() {
 			spell.DealDamage(sim, result)
 		},
 	})
+
+	if !dk.Inputs.NewDrw {
+		dk.RuneWeapon.IcyTouch.DamageMultiplier *= 0.5
+		dk.RuneWeapon.IcyTouch.Flags |= core.SpellFlagIgnoreAttackerModifiers
+	}
 }

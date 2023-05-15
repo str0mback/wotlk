@@ -397,6 +397,9 @@ func (druid *Druid) applyOmenOfClarity() {
 			}
 		},
 		OnCastComplete: func(aura *core.Aura, sim *core.Simulation, spell *core.Spell) {
+			if spell == druid.FaerieFire && druid.InForm(Cat|Bear) {
+				druid.ProcOoc(sim)
+			}
 			if spell == druid.GiftOfTheWild {
 				// Based on ingame testing by druid discord, subject to change or incorrectness
 				chanceToProc := 1.0 - math.Pow(1.0-0.0875, float64(druid.RaidBuffTargets))
@@ -532,7 +535,7 @@ func (druid *Druid) applyImprovedLotp() {
 				return
 			}
 			icd.Use(sim)
-			druid.AddMana(sim, druid.MaxMana()*manaRestore, manaMetrics, false)
+			druid.AddMana(sim, druid.MaxMana()*manaRestore, manaMetrics)
 			druid.GainHealth(sim, druid.MaxHealth()*healthRestore, healthMetrics)
 		},
 	})
@@ -550,14 +553,14 @@ func (druid *Druid) applyPredatoryInstincts() {
 		Label:    "Predatory Instincts",
 		Duration: core.NeverExpires,
 		OnGain: func(aura *core.Aura, sim *core.Simulation) {
-			druid.LacerateDot.Spell.CritMultiplier = onGainMod
-			druid.RipDot.Spell.CritMultiplier = onGainMod
-			druid.RakeDot.Spell.CritMultiplier = onGainMod
+			druid.Lacerate.CritMultiplier = onGainMod
+			druid.Rip.CritMultiplier = onGainMod
+			druid.Rake.CritMultiplier = onGainMod
 		},
 		OnExpire: func(aura *core.Aura, sim *core.Simulation) {
-			druid.LacerateDot.Spell.CritMultiplier = onExpireMod
-			druid.RipDot.Spell.CritMultiplier = onExpireMod
-			druid.RakeDot.Spell.CritMultiplier = onExpireMod
+			druid.Lacerate.CritMultiplier = onExpireMod
+			druid.Rip.CritMultiplier = onExpireMod
+			druid.Rake.CritMultiplier = onExpireMod
 		},
 	})
 }

@@ -11,9 +11,9 @@ func (warlock *Warlock) registerShadowBoltSpell() {
 	spellCoeff := 0.857 * (1 + 0.04*float64(warlock.Talents.ShadowAndFlame))
 	ISBProcChance := 0.2 * float64(warlock.Talents.ImprovedShadowBolt)
 
-	var shadowMasteryAura *core.Aura
+	var shadowMasteryAuras core.AuraArray
 	if ISBProcChance > 0 {
-		shadowMasteryAura = core.ShadowMasteryAura(warlock.CurrentTarget)
+		shadowMasteryAuras = warlock.NewEnemyAuraArray(core.ShadowMasteryAura)
 	}
 
 	warlock.ShadowBolt = warlock.RegisterSpell(core.SpellConfig{
@@ -33,17 +33,9 @@ func (warlock *Warlock) registerShadowBoltSpell() {
 				GCD:      core.GCDDefault,
 				CastTime: time.Millisecond * (3000 - 100*time.Duration(warlock.Talents.Bane)),
 			},
-			ModifyCast: func(_ *core.Simulation, _ *core.Spell, cast *core.Cast) {
-				cast.GCD = time.Duration(float64(cast.GCD) * warlock.backdraftModifier())
-				cast.CastTime = time.Duration(float64(cast.CastTime) * warlock.backdraftModifier())
-				if warlock.Talents.Nightfall > 0 {
-					warlock.applyNightfall(cast)
-				}
-			},
 		},
 
 		BonusCritRating: 0 +
-			warlock.masterDemonologistShadowCrit +
 			core.TernaryFloat64(warlock.Talents.Devastation, 5*core.CritRatingPerCritChance, 0) +
 			core.TernaryFloat64(warlock.HasSetBonus(ItemSetDeathbringerGarb, 4), 5*core.CritRatingPerCritChance, 0) +
 			core.TernaryFloat64(warlock.HasSetBonus(ItemSetDarkCovensRegalia, 2), 5*core.CritRatingPerCritChance, 0),
@@ -63,13 +55,10 @@ func (warlock *Warlock) registerShadowBoltSpell() {
 				if result.Landed() {
 					// ISB debuff
 					if sim.Proc(ISBProcChance, "ISB") {
-						shadowMasteryAura.Activate(sim)
+						shadowMasteryAuras.Get(target).Activate(sim)
 					}
 				}
 			})
-			if warlock.DemonicSoulAura.IsActive() {
-				warlock.DemonicSoulAura.Deactivate(sim)
-			}
 		},
 	})
 }

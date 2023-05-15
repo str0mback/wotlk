@@ -127,6 +127,16 @@ type Raid struct {
 	leftoverReplenishmentUnits []*Unit   // Units without replenishment currently active.
 }
 
+func (raid *Raid) GetActiveUnits() []*Unit {
+	activeUnits := []*Unit{}
+	for _, unit := range raid.AllUnits {
+		if unit.IsActive() {
+			activeUnits = append(activeUnits, unit)
+		}
+	}
+	return activeUnits
+}
+
 // Makes a new raid.
 func NewRaid(raidConfig *proto.Raid) *Raid {
 	numParties := int(raidConfig.NumActiveParties)
@@ -401,14 +411,6 @@ func (raid *Raid) GetPlayerFromUnitIndex(unitIndex int32) Agent {
 		}
 	}
 	return nil
-}
-
-func (raid *Raid) Prepull(sim *Simulation) {
-	for _, party := range raid.Parties {
-		for _, agent := range party.Players {
-			agent.Prepull(sim)
-		}
-	}
 }
 
 func (raid *Raid) reset(sim *Simulation) {

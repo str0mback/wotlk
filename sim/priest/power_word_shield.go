@@ -43,6 +43,9 @@ func (priest *Priest) registerPowerWordShieldSpell() {
 			},
 			CD: cd,
 		},
+		ExtraCastCondition: func(sim *core.Simulation, target *core.Unit) bool {
+			return !priest.WeakenedSouls.Get(target).IsActive()
+		},
 
 		DamageMultiplier: 1 *
 			(1 + .05*float64(priest.Talents.ImprovedPowerWordShield)) *
@@ -54,15 +57,11 @@ func (priest *Priest) registerPowerWordShieldSpell() {
 		ThreatMultiplier: 1 - []float64{0, .07, .14, .20}[priest.Talents.SilentResolve],
 
 		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
-			weakenedSoul := priest.WeakenedSouls[target.UnitIndex]
-			if weakenedSoul.IsActive() {
-				panic("Cannot cast PWS on target with Weakened Soul!")
-			}
-
 			shieldAmount := 2230.0 + coeff*spell.HealingPower(target)
 			shield := priest.PWSShields[target.UnitIndex]
 			shield.Apply(sim, shieldAmount)
 
+			weakenedSoul := priest.WeakenedSouls.Get(target)
 			weakenedSoul.Duration = wsDuration
 			weakenedSoul.Activate(sim)
 
@@ -83,12 +82,13 @@ func (priest *Priest) registerPowerWordShieldSpell() {
 			Duration: time.Second * 30,
 		})
 
-	priest.WeakenedSouls = make([]*core.Aura, len(priest.Env.AllUnits))
-	for _, unit := range priest.Env.AllUnits {
-		if !priest.IsOpponent(unit) {
-			priest.WeakenedSouls[unit.UnitIndex] = priest.makeWeakenedSoul(unit)
-		}
-	}
+	priest.WeakenedSouls = priest.NewAllyAuraArray(func(target *core.Unit) *core.Aura {
+		return target.GetOrRegisterAura(core.Aura{
+			Label:    "Weakened Soul",
+			ActionID: core.ActionID{SpellID: 6788},
+			Duration: time.Second * 15,
+		})
+	})
 
 	if priest.HasMajorGlyph(proto.PriestMajorGlyph_GlyphOfPowerWordShield) {
 		glyphHeal = priest.RegisterSpell(core.SpellConfig{
@@ -124,18 +124,4 @@ func (priest *Priest) makePWSShield(target *core.Unit) *core.Shield {
 			Duration: time.Second * 30,
 		}),
 	})
-}
-
-func (priest *Priest) makeWeakenedSoul(target *core.Unit) *core.Aura {
-	return target.GetOrRegisterAura(core.Aura{
-		Label:    "Weakened Soul",
-		ActionID: core.ActionID{SpellID: 6788},
-		Duration: time.Second * 15,
-	})
-}
-
-func (priest *Priest) CanCastPWS(sim *core.Simulation, target *core.Unit) bool {
-	return priest.PowerWordShield.IsReady(sim) &&
-		priest.WeakenedSouls[target.UnitIndex] != nil &&
-		!priest.WeakenedSouls[target.UnitIndex].IsActive()
 }

@@ -56,6 +56,9 @@ const (
 	ProcMaskRangedSpecial
 	ProcMaskSpellDamage
 	ProcMaskSpellHealing
+
+	// Special case where a Proc Can trigger a Proc
+	ProcMaskCanProcFromProc
 )
 
 const (
@@ -185,11 +188,15 @@ const (
 	SpellFlagBinary                                         // Does not do partial resists and could need a different hit roll.
 	SpellFlagChanneled                                      // Spell is channeled
 	SpellFlagDisease                                        // Spell is categorized as disease
+	SpellFlagHauntSE                                        // Spell benefits from haunt/SE effects
 	SpellFlagHelpful                                        // For healing spells / buffs.
 	SpellFlagMeleeMetrics                                   // Marks a spell as a melee ability for metrics.
 	SpellFlagNoOnCastComplete                               // Disables the OnCastComplete callback.
 	SpellFlagNoMetrics                                      // Disables metrics for a spell.
 	SpellFlagNoLogs                                         // Disables logs for a spell.
+	SpellFlagAPL                                            // Indicates this spell can be used from an APL rotation.
+	SpellFlagMCD                                            // Indicates this spell is a MajorCooldown.
+	SpellFlagNoOnDamageDealt                                // Disables OnSpellHitDealt and OnPeriodicDamageDealt aura callbacks for this spell.
 
 	// Used to let agents categorize their spells.
 	SpellFlagAgentReserved1

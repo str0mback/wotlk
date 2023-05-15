@@ -1,99 +1,192 @@
 @use "sass:map";
 
-.ep-weights-header {
-	display: flex;
-}
+.ep-weights-menu {
+	.ep-weights-options {
+		margin-bottom: $block-spacer;
+	}
 
-.ep-weights-actions {
-	display: flex;
-	flex-direction: column;
-	justify-content: space-around;
-	width: 50%;
-}
-.ep-weights-actions > * {
-	margin: 10px 20px;
-}
+	.ep-reference-options {
+		margin-bottom: $block-spacer;
+		span {
+			font-weight: bold;
+		}
 
-.ep-weights-results {
-	position: relative;
-	width: 50%;
-	min-height: 150px;
-}
-.ep-weights-results .results-viewer {
-	@include vertical-horizontal-center;
-}
+		p {
+			margin-top: $block-spacer;
+		}
+	}
 
-.stats-controls-row {
-	display: flex;
-	justify-content: space-around;
-	margin: 10px;
-}
+	.results-ep-table-container {
+		position: relative;
 
-.show-all-stats-container .boolean-picker-root {
-	margin-bottom: 0 !important;
+		&.pending {
+			overflow: hidden;
+			margin: 0;
+			
+			.results-ep-table {
+				filter: blur(2px);
+			}
 
-	label {
-		margin-right: $block-spacer;
+			.results-pending-overlay {
+				display: flex;
+			}
+		}
+
+		.results-pending-overlay {
+			position: absolute;
+			inset: 0;
+			display: none;
+			align-items: center;
+			justify-content: center;
+			z-index: 1;
+			background: rgba(0,0,0,0.5);
+		}
+
+		.results-ep-table {
+			width: 100%;
+			
+			&.stats-type-ep .type-weight,
+			&.stats-type-weight .type-ep {
+				display: none;
+			}
+
+			th, td {
+				&[class*="type-"] {
+					text-align: right;
+				}
+			}
+
+			th {
+				padding-top: map.get($spacers, 2);
+				padding-bottom: map.get($spacers, 2);
+				padding-right: map.get($spacers, 2);
+				text-align: left;
+			}
+
+			.ep-ratios {
+				background-color: $table-row-even-bg;
+
+				td {
+					padding: $table-cell-padding;
+				}
+
+				.input-root {
+					align-items: flex-end;
+				}
+
+				input {
+					text-align: right;
+					max-width: 100px;
+				}
+
+				.compute-ep {
+					white-space: nowrap;
+					.not-tiny { display: inline; }
+					.fas {
+						display: inline;
+						vertical-align:middle;
+					}
+				}
+			}
+
+			tbody {
+				tr:nth-child(even) {
+					background-color: $table-row-even-bg;	
+				}
+
+				tr:nth-child(odd) {
+					background-color: $table-row-odd-bg;	
+				}
+
+				td {
+					padding: $table-cell-padding;
+					.fas { display: inline; }
+				}
+			}
+
+			.input-root {
+				margin-bottom: 0;
+			}
+
+			.results-stdev {
+				font-size: .625rem;
+			}
+
+			.col-action {
+				margin-left: map.get($spacers, 1);
+			}
+		}
 	}
 }
 
-.ep-weights-table {
-	max-height: 50vh;
-	overflow-y: auto;
-}
+// Style overrides for the EP UI in tank mode
+.ep-weights-menu:not(.hide-threat-metrics) {
+	// Compact rendering of EP compute button
+	@mixin compact-button {
+		.results-ep-table-container {
+			.results-ep-table {
+				.not-tiny { display: none !important; }
+			}
+		}
+	}
 
-.results-ep-table {
-  margin: auto;
-	color: white;
-}
+	// Compact rendering of number pickers
+	@mixin compact-input {
+		input {
+			text-align: center;
+			padding-left: 0;
+			padding-right: 3px;
+		}
+	}
 
-.ep-weights-table:not(.show-all-stats) .non-ep-stat {
-	display: none;
-}
+	// Compact table display by shrinking padding
+	@mixin compact-table {
+		.results-ep-table-container {
+			.results-ep-table {
+				padding-right: 0;
+				td {
+					padding-left: 0;
+				}
+			}
+		}
+	}
 
-.results-ep-table .col-action {
-	margin-left: map.get($spacers, 1);
-}
+	// Shorten the compute EP button on very small devices
+	@media (max-width: 471px) { @include compact-button; }
 
-.results-ep-table td, .results-ep-table th {
-  padding: 2px 20px;
-	white-space: nowrap;
-}
+	// More compact EP table on mobile viewports
+	@include media-breakpoint-only(xs) {
+		@include compact-table;
+		.ep-ratios { @include compact-input; }
+	}
 
-.results-ep-table td {
-  text-align: right;
-  font-size: 14px;
-}
-.results-ep-table td input {
-  text-align: right;
-}
+	// Padding obscures part of the value on these sizes
+	@include media-breakpoint-between(sm,lg) {
+		.ep-ratios { @include compact-input; }
+	}
 
-.results-ep-table th {
-  text-align: center;
-  font-size: 16px;
-  font-weight: 700;
-	white-space: nowrap;
-}
+	// Avoid awkward line wrapping of table headers
+	@include media-breakpoint-down(lg) {
+		.results-ep-table {
+			th[class*="type-"] {
+				text-align: center;
+			}
+		}
+	}
 
-.results-ep-table td:nth-child(1) {
-  text-align: left;
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.stdev-cell span:nth-child(2) {
-  text-align: left;
-  font-size: 12px;
-  font-weight: 700;
-}
-.stdev-cell span:nth-child(2):before {
-  content: " \00b1";
-  padding: 1px;
-}
-
-.stats-type-ep .type-weight {
-  display: none;
-}
-.stats-type-weight .type-ep {
-  display: none;
+	// Style overrides for the expanded/experimental EP UI in tank mode
+	&:not(.hide-experimental) {
+		@include media-breakpoint-down(lg) {
+			@include compact-button;
+			@include compact-table;
+			.results-ep-table {
+				@include compact-input;
+			}
+		}
+		@include media-breakpoint-only(lg) {
+			.results-ep-table {
+				th { padding-right: 0; }
+			}
+		}
+	}
 }

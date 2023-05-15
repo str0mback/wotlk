@@ -386,12 +386,16 @@ func (aa *AutoAttacks) reset(sim *Simulation) {
 
 	aa.autoSwingAction = nil
 	aa.autoSwingCancelled = false
-	aa.resetAutoSwing(sim)
+}
 
+func (aa *AutoAttacks) startPull(sim *Simulation) {
+	if aa.IsEnabled() && aa.unit.IsEnabled() {
+		aa.resetAutoSwing(sim)
+	}
 }
 
 func (aa *AutoAttacks) resetAutoSwing(sim *Simulation) {
-	if aa.autoSwingCancelled || (!aa.AutoSwingMelee && !aa.AutoSwingRanged) {
+	if aa.autoSwingCancelled || (!aa.AutoSwingMelee && !aa.AutoSwingRanged) || sim.CurrentTime < 0 {
 		return
 	}
 
@@ -436,14 +440,17 @@ func (aa *AutoAttacks) CancelAutoSwing(sim *Simulation) {
 	if aa.autoSwingAction != nil {
 		aa.autoSwingAction.Cancel(sim)
 		aa.autoSwingAction = nil
-		aa.autoSwingCancelled = true
 	}
+	aa.autoSwingCancelled = true
 }
 
 // Renables the auto swing action for the iteration
 func (aa *AutoAttacks) EnableAutoSwing(sim *Simulation) {
 	// Already enabled so nothing to do
 	if aa.autoSwingAction != nil {
+		return
+	}
+	if sim.CurrentTime < 0 {
 		return
 	}
 
@@ -498,7 +505,9 @@ func (aa *AutoAttacks) TrySwingMH(sim *Simulation, target *Unit) {
 	aa.MainhandSwingAt = sim.CurrentTime + aa.MainhandSwingSpeed()
 	aa.previousMHSwingAt = sim.CurrentTime
 	aa.PreviousSwingAt = sim.CurrentTime
-	aa.agent.OnAutoAttack(sim, attackSpell)
+	if !sim.Options.Interactive {
+		aa.agent.OnAutoAttack(sim, attackSpell)
+	}
 }
 
 // Optionally replaces the given swing spell with an Agent-specified MH Swing replacer.
@@ -542,7 +551,9 @@ func (aa *AutoAttacks) TrySwingOH(sim *Simulation, target *Unit) {
 	aa.OHAuto.Cast(sim, target)
 	aa.OffhandSwingAt = sim.CurrentTime + aa.OffhandSwingSpeed()
 	aa.PreviousSwingAt = sim.CurrentTime
-	aa.agent.OnAutoAttack(sim, aa.OHAuto)
+	if !sim.Options.Interactive {
+		aa.agent.OnAutoAttack(sim, aa.OHAuto)
+	}
 }
 
 // Performs an autoattack using the ranged weapon, if the ranged CD is ready.
@@ -554,7 +565,9 @@ func (aa *AutoAttacks) TrySwingRanged(sim *Simulation, target *Unit) {
 	aa.RangedAuto.Cast(sim, target)
 	aa.RangedSwingAt = sim.CurrentTime + aa.RangedSwingSpeed()
 	aa.PreviousSwingAt = sim.CurrentTime
-	aa.agent.OnAutoAttack(sim, aa.RangedAuto)
+	if !sim.Options.Interactive {
+		aa.agent.OnAutoAttack(sim, aa.RangedAuto)
+	}
 }
 
 func (aa *AutoAttacks) UpdateSwingTime(sim *Simulation) {
@@ -611,7 +624,7 @@ func (aa *AutoAttacks) StopMeleeUntil(sim *Simulation, readyAt time.Duration, de
 
 func (aa *AutoAttacks) restartMelee(sim *Simulation) {
 	if !aa.autoSwingCancelled {
-		panic("restartMelee used while auto swing isn't cancelled")
+		return
 	}
 
 	aa.MainhandSwingAt = sim.CurrentTime + aa.MainhandSwingSpeed()
@@ -626,7 +639,7 @@ func (aa *AutoAttacks) restartMelee(sim *Simulation) {
 // After swing timer has passed half the swing time, Offhand swing timer will be reset.
 func (aa *AutoAttacks) desyncedRestartMelee(sim *Simulation) {
 	if !aa.autoSwingCancelled {
-		panic("desyncedRestartMelee used while auto swing isn't cancelled")
+		return
 	}
 
 	aa.MainhandSwingAt = sim.CurrentTime + aa.MainhandSwingSpeed()

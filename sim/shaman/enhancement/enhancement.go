@@ -48,12 +48,17 @@ func NewEnhancementShaman(character core.Character, options *proto.Player) *Enha
 	enh.EnableResumeAfterManaWait(enh.OnGCDReady)
 	enh.rotation = NewPriorityRotation(enh, enhOptions.Rotation)
 
+	syncType := int32(enhOptions.Options.SyncType)
+	if syncType == int32(proto.ShamanSyncType_Auto) {
+		syncType = enh.AutoSyncWeapons()
+	}
+
 	// Enable Auto Attacks for this spec
 	enh.EnableAutoAttacks(enh, core.AutoAttackOptions{
 		MainHand:       enh.WeaponFromMainHand(enh.DefaultMeleeCritMultiplier()),
 		OffHand:        enh.WeaponFromOffHand(enh.DefaultMeleeCritMultiplier()),
 		AutoSwingMelee: true,
-		SyncType:       int32(enhOptions.Options.SyncType),
+		SyncType:       syncType,
 	})
 
 	if enh.Totems.UseFireElemental && enhOptions.Rotation.EnableItemSwap {
@@ -69,6 +74,7 @@ func NewEnhancementShaman(character core.Character, options *proto.Player) *Enha
 	if !enh.HasMHWeapon() {
 		enh.SelfBuffs.ImbueMH = proto.ShamanImbue_NoImbue
 	}
+
 	if !enh.HasOHWeapon() {
 		enh.SelfBuffs.ImbueOH = proto.ShamanImbue_NoImbue
 	}
@@ -82,9 +88,6 @@ func NewEnhancementShaman(character core.Character, options *proto.Player) *Enha
 	enh.RegisterWindfuryImbue(
 		enh.SelfBuffs.ImbueMH == proto.ShamanImbue_WindfuryWeapon,
 		enh.SelfBuffs.ImbueOH == proto.ShamanImbue_WindfuryWeapon)
-	enh.RegisterFrostbrandImbue(
-		enh.SelfBuffs.ImbueMH == proto.ShamanImbue_FrostbrandWeapon,
-		enh.SelfBuffs.ImbueOH == proto.ShamanImbue_FrostbrandWeapon)
 
 	enh.SpiritWolves = &shaman.SpiritWolves{
 		SpiritWolf1: enh.NewSpiritWolf(1),
@@ -100,7 +103,6 @@ type EnhancementShaman struct {
 	*shaman.Shaman
 
 	rotation                Rotation
-	LightningBolts          []*core.Spell
 	maelstromweaponMinStack int32
 
 	scheduler common.GCDScheduler
@@ -113,30 +115,36 @@ func (enh *EnhancementShaman) GetShaman() *shaman.Shaman {
 func (enh *EnhancementShaman) Initialize() {
 	enh.Shaman.Initialize()
 
+	enh.RegisterFrostbrandImbue(
+		enh.SelfBuffs.ImbueMH == proto.ShamanImbue_FrostbrandWeapon,
+		enh.SelfBuffs.ImbueOH == proto.ShamanImbue_FrostbrandWeapon)
+
 	if enh.ItemSwap.IsEnabled() {
 		mh := enh.ItemSwap.GetItem(proto.ItemSlot_ItemSlotMainHand)
 		enh.ApplyFlametongueImbueToItem(mh, true)
 		oh := enh.ItemSwap.GetItem(proto.ItemSlot_ItemSlotOffHand)
 		enh.ApplyFlametongueImbueToItem(oh, false)
 		enh.RegisterOnItemSwap(func(s *core.Simulation) {
-			mh := enh.GetMHWeapon()
-			oh := enh.GetOHWeapon()
-
-			if mh == nil || oh == nil || mh.SwingSpeed != oh.SwingSpeed {
-				enh.AutoAttacks.SyncType = int32(proto.ShamanSyncType_NoSync)
-			} else {
-				enh.AutoAttacks.SyncType = int32(proto.ShamanSyncType_SyncMainhandOffhandSwings)
-			}
+			enh.AutoAttacks.SyncType = enh.AutoSyncWeapons()
 		})
 	}
-	enh.LightningBolts = enh.RegisterMaelstromLightningBoltSpells(enh.maelstromweaponMinStack)
 	enh.DelayDPSCooldowns(3 * time.Second)
-
 }
 
 func (enh *EnhancementShaman) Reset(sim *core.Simulation) {
 	enh.Shaman.Reset(sim)
 	enh.ItemSwap.SwapItems(sim, []proto.ItemSlot{proto.ItemSlot_ItemSlotMainHand, proto.ItemSlot_ItemSlotOffHand}, false)
+}
+
+func (enh *EnhancementShaman) AutoSyncWeapons() int32 {
+	mh := enh.GetMHWeapon()
+	oh := enh.GetOHWeapon()
+
+	if mh == nil || oh == nil || mh.SwingSpeed != oh.SwingSpeed {
+		return int32(proto.ShamanSyncType_NoSync)
+	}
+
+	return int32(proto.ShamanSyncType_SyncMainhandOffhandSwings)
 }
 
 func (enh *EnhancementShaman) CastLightningBoltWeave(sim *core.Simulation, reactionTime time.Duration) bool {
@@ -154,20 +162,16 @@ func (enh *EnhancementShaman) CastLightningBoltWeave(sim *core.Simulation, react
 
 			enh.HardcastWaitUntil(sim, reactionTime, func(_ *core.Simulation, _ *core.Unit) {
 				enh.GCD.Reset()
-				enh.CastLightningBolt(sim, enh.CurrentTarget)
+				enh.LightningBolt.Cast(sim, enh.CurrentTarget)
 			})
 
 			enh.WaitUntil(sim, reactionTime)
 			return true
 		}
-		return enh.CastLightningBolt(sim, enh.CurrentTarget)
+		return enh.LightningBolt.Cast(sim, enh.CurrentTarget)
 	}
 
 	return false
-}
-
-func (enh *EnhancementShaman) CastLightningBolt(sim *core.Simulation, target *core.Unit) bool {
-	return enh.LightningBolts[enh.MaelstromWeaponAura.GetStacks()-enh.maelstromweaponMinStack].Cast(sim, target)
 }
 
 func (enh *EnhancementShaman) CastLavaBurstWeave(sim *core.Simulation, reactionTime time.Duration) bool {

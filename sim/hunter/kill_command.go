@@ -21,13 +21,13 @@ func (hunter *Hunter) registerKillCommandCD() {
 		MaxStacks: 3,
 		OnGain: func(aura *core.Aura, sim *core.Simulation) {
 			hunter.pet.focusDump.BonusCritRating += bonusPetSpecialCrit
-			if !hunter.pet.specialAbility.IsEmpty() {
+			if hunter.pet.specialAbility != nil {
 				hunter.pet.specialAbility.BonusCritRating += bonusPetSpecialCrit
 			}
 		},
 		OnExpire: func(aura *core.Aura, sim *core.Simulation) {
 			hunter.pet.focusDump.BonusCritRating -= bonusPetSpecialCrit
-			if !hunter.pet.specialAbility.IsEmpty() {
+			if hunter.pet.specialAbility != nil {
 				hunter.pet.specialAbility.BonusCritRating -= bonusPetSpecialCrit
 			}
 		},
@@ -52,6 +52,9 @@ func (hunter *Hunter) registerKillCommandCD() {
 				Duration: time.Minute - time.Second*10*time.Duration(hunter.Talents.CatlikeReflexes),
 			},
 		},
+		ExtraCastCondition: func(sim *core.Simulation, target *core.Unit) bool {
+			return hunter.pet.IsEnabled()
+		},
 
 		ApplyEffects: func(sim *core.Simulation, _ *core.Unit, _ *core.Spell) {
 			hunter.pet.KillCommandAura.Activate(sim)
@@ -62,8 +65,5 @@ func (hunter *Hunter) registerKillCommandCD() {
 	hunter.AddMajorCooldown(core.MajorCooldown{
 		Spell: hunter.KillCommand,
 		Type:  core.CooldownTypeDPS,
-		CanActivate: func(sim *core.Simulation, character *core.Character) bool {
-			return hunter.pet.IsEnabled() && hunter.CurrentMana() >= hunter.KillCommand.DefaultCast.Cost
-		},
 	})
 }

@@ -188,10 +188,10 @@ func (spell *Spell) calcDamageInternal(sim *Simulation, target *Unit, baseDamage
 	} else {
 		result.Damage *= attackerMultiplier
 		afterAttackMods := result.Damage
-		result.applyTargetModifiers(spell, attackTable, isPeriodic)
-		afterTargetMods := result.Damage
 		result.applyResistances(sim, spell, isPeriodic, attackTable)
 		afterResistances := result.Damage
+		result.applyTargetModifiers(spell, attackTable, isPeriodic)
+		afterTargetMods := result.Damage
 		outcomeApplier(sim, result, attackTable)
 		afterOutcome := result.Damage
 		spell.ApplyPostOutcomeDamageModifiers(sim, result)
@@ -199,8 +199,8 @@ func (spell *Spell) calcDamageInternal(sim *Simulation, target *Unit, baseDamage
 
 		spell.Unit.Log(
 			sim,
-			"%s %s [DEBUG] MAP: %0.01f, RAP: %0.01f, SP: %0.01f, BaseDamage:%0.01f, AfterAttackerMods:%0.01f, AfterTargetMods:%0.01f, AfterResistances:%0.01f, AfterOutcome:%0.01f, AfterPostOutcome:%0.01f",
-			target.LogLabel(), spell.ActionID, spell.Unit.GetStat(stats.AttackPower), spell.Unit.GetStat(stats.RangedAttackPower), spell.Unit.GetStat(stats.SpellPower), baseDamage, afterAttackMods, afterTargetMods, afterResistances, afterOutcome, afterPostOutcome)
+			"%s %s [DEBUG] MAP: %0.01f, RAP: %0.01f, SP: %0.01f, BaseDamage:%0.01f, AfterAttackerMods:%0.01f, AfterResistances:%0.01f, AfterTargetMods:%0.01f, AfterOutcome:%0.01f, AfterPostOutcome:%0.01f",
+			target.LogLabel(), spell.ActionID, spell.Unit.GetStat(stats.AttackPower), spell.Unit.GetStat(stats.RangedAttackPower), spell.Unit.GetStat(stats.SpellPower), baseDamage, afterAttackMods, afterResistances, afterTargetMods, afterOutcome, afterPostOutcome)
 	}
 
 	result.Threat = spell.ThreatFromDamage(result.Outcome, result.Damage)
@@ -247,12 +247,14 @@ func (spell *Spell) dealDamageInternal(sim *Simulation, isPeriodic bool, result 
 		}
 	}
 
-	if isPeriodic {
-		spell.Unit.OnPeriodicDamageDealt(sim, spell, result)
-		result.Target.OnPeriodicDamageTaken(sim, spell, result)
-	} else {
-		spell.Unit.OnSpellHitDealt(sim, spell, result)
-		result.Target.OnSpellHitTaken(sim, spell, result)
+	if !spell.Flags.Matches(SpellFlagNoOnDamageDealt) {
+		if isPeriodic {
+			spell.Unit.OnPeriodicDamageDealt(sim, spell, result)
+			result.Target.OnPeriodicDamageTaken(sim, spell, result)
+		} else {
+			spell.Unit.OnSpellHitDealt(sim, spell, result)
+			result.Target.OnSpellHitTaken(sim, spell, result)
+		}
 	}
 
 	spell.DisposeResult(result)
@@ -373,20 +375,19 @@ func (spell *Spell) WaitTravelTime(sim *Simulation, callback func(*Simulation)) 
 
 // Returns the combined attacker modifiers.
 func (spell *Spell) AttackerDamageMultiplier(attackTable *AttackTable) float64 {
-	// Even when ignoring attacker multipliers we still apply this one, because its specific to the spell.
-	multiplier := spell.DamageMultiplier * spell.DamageMultiplierAdditive
-
+	return spell.attackerDamageMultiplierInternal(attackTable) *
+		spell.DamageMultiplier *
+		spell.DamageMultiplierAdditive
+}
+func (spell *Spell) attackerDamageMultiplierInternal(attackTable *AttackTable) float64 {
 	if spell.Flags.Matches(SpellFlagIgnoreAttackerModifiers) {
-		return multiplier
+		return 1
 	}
 
 	ps := spell.Unit.PseudoStats
-
-	multiplier *= ps.DamageDealtMultiplier *
+	return ps.DamageDealtMultiplier *
 		ps.SchoolDamageDealtMultiplier[spell.SchoolIndex] *
 		attackTable.DamageDealtMultiplier
-
-	return multiplier
 }
 
 func (result *SpellResult) applyTargetModifiers(spell *Spell, attackTable *AttackTable, isPeriodic bool) {
@@ -405,25 +406,22 @@ func (spell *Spell) TargetDamageMultiplier(attackTable *AttackTable, isPeriodic 
 		return 1
 	}
 
-	ps := attackTable.Defender.PseudoStats
-
-	multiplier := ps.DamageTakenMultiplier *
-		ps.SchoolDamageTakenMultiplier[spell.SchoolIndex] *
+	multiplier := attackTable.Defender.PseudoStats.DamageTakenMultiplier *
+		attackTable.Defender.PseudoStats.SchoolDamageTakenMultiplier[spell.SchoolIndex] *
 		attackTable.DamageTakenMultiplier
 
 	if spell.Flags.Matches(SpellFlagDisease) {
-		multiplier *= ps.DiseaseDamageTakenMultiplier
+		multiplier *= attackTable.Defender.PseudoStats.DiseaseDamageTakenMultiplier
+	}
+
+	if spell.Flags.Matches(SpellFlagHauntSE) {
+		multiplier *= attackTable.HauntSEDamageTakenMultiplier
 	}
 
 	if spell.SpellSchool.Matches(SpellSchoolNature) {
 		multiplier *= attackTable.NatureDamageTakenMultiplier
-	} else if isPeriodic {
-		switch {
-		case spell.SpellSchool.Matches(SpellSchoolPhysical):
-			multiplier *= ps.PeriodicPhysicalDamageTakenMultiplier
-		case spell.SpellSchool.Matches(SpellSchoolShadow):
-			multiplier *= attackTable.PeriodicShadowDamageTakenMultiplier
-		}
+	} else if isPeriodic && spell.SpellSchool.Matches(SpellSchoolPhysical) {
+		multiplier *= attackTable.Defender.PseudoStats.PeriodicPhysicalDamageTakenMultiplier
 	}
 
 	return multiplier

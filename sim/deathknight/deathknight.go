@@ -21,7 +21,8 @@ var TalentTreeSizes = [3]int{28, 29, 31}
 
 type DeathknightInputs struct {
 	// Option Vars
-	IsDps bool
+	IsDps  bool
+	NewDrw bool
 
 	UnholyFrenzyTarget *proto.RaidTarget
 
@@ -29,6 +30,8 @@ type DeathknightInputs struct {
 	PrecastGhoulFrenzy  bool
 	PrecastHornOfWinter bool
 	PetUptime           float64
+	DrwPestiApply       bool
+	BloodOpener         proto.Deathknight_Rotation_BloodOpener
 
 	// Rotation Vars
 	RefreshHornOfWinter bool
@@ -38,9 +41,12 @@ type DeathknightInputs struct {
 	AvgAMSSuccessRate   float64
 	AvgAMSHit           float64
 	FuStrike            Rotation_FuStrike
+	DiseaseDowntime     float64
 }
 
 type DeathknightCoeffs struct {
+	runeTapHealing float64
+
 	glacierRotBonusCoeff      float64
 	mercilessCombatBonusCoeff float64
 	impurityBonusCoeff        float64
@@ -64,125 +70,125 @@ type Deathknight struct {
 	RotationHelper
 
 	Ghoul     *GhoulPet
-	RaiseDead *RuneSpell
+	RaiseDead *core.Spell
 
 	Gargoyle                 *GargoylePet
-	SummonGargoyle           *RuneSpell
+	SummonGargoyle           *core.Spell
+	SummonGargoyleAura       *core.Aura
 	GargoyleSummonDelay      time.Duration
 	OnGargoyleStartFirstCast func()
 
 	RuneWeapon        *RuneWeaponPet
-	DancingRuneWeapon *RuneSpell
+	DancingRuneWeapon *core.Spell
+	drwDmgSnapshot    float64
+	drwPhysSnapshot   float64
 
-	ArmyOfTheDead *RuneSpell
+	ArmyOfTheDead *core.Spell
 	ArmyGhoul     []*GhoulPet
 
 	Bloodworm []*BloodwormPet
 
 	Presence Presence
 
-	IcyTouch   *RuneSpell
-	BloodBoil  *RuneSpell
-	Pestilence *RuneSpell
+	IcyTouch   *core.Spell
+	BloodBoil  *core.Spell
+	Pestilence *core.Spell
 
-	PlagueStrike      *RuneSpell
-	PlagueStrikeMhHit *RuneSpell
-	PlagueStrikeOhHit *RuneSpell
+	PlagueStrike      *core.Spell
+	PlagueStrikeMhHit *core.Spell
+	PlagueStrikeOhHit *core.Spell
 
-	DeathStrike      *RuneSpell
-	DeathStrikeMhHit *RuneSpell
-	DeathStrikeOhHit *RuneSpell
+	DeathStrike      *core.Spell
+	DeathStrikeMhHit *core.Spell
+	DeathStrikeOhHit *core.Spell
 	DeathStrikeHeals []float64
 
-	Obliterate      *RuneSpell
-	ObliterateMhHit *RuneSpell
-	ObliterateOhHit *RuneSpell
+	Obliterate      *core.Spell
+	ObliterateMhHit *core.Spell
+	ObliterateOhHit *core.Spell
 
-	BloodStrike      *RuneSpell
-	BloodStrikeMhHit *RuneSpell
-	BloodStrikeOhHit *RuneSpell
+	BloodStrike      *core.Spell
+	BloodStrikeMhHit *core.Spell
+	BloodStrikeOhHit *core.Spell
 
-	FrostStrike      *RuneSpell
-	FrostStrikeMhHit *RuneSpell
-	FrostStrikeOhHit *RuneSpell
+	FrostStrike      *core.Spell
+	FrostStrikeMhHit *core.Spell
+	FrostStrikeOhHit *core.Spell
 
-	HeartStrike       *RuneSpell
-	HeartStrikeOffHit *RuneSpell
+	HeartStrike       *core.Spell
+	HeartStrikeOffHit *core.Spell
 
-	RuneStrike     *RuneSpell
+	RuneStrike     *core.Spell
+	RuneStrikeOh   *core.Spell
 	RuneStrikeAura *core.Aura
 
-	GhoulFrenzy *RuneSpell
+	GhoulFrenzy *core.Spell
 	// Dummy aura for timeline metrics
 	GhoulFrenzyAura *core.Aura
 
 	LastScourgeStrikeDamage float64
-	ScourgeStrike           *RuneSpell
+	ScourgeStrike           *core.Spell
 
-	DeathCoil *RuneSpell
+	DeathCoil *core.Spell
 
-	DeathAndDecay    *RuneSpell
-	DeathAndDecayDot *core.Dot
+	DeathAndDecay *core.Spell
 
-	HowlingBlast *RuneSpell
+	HowlingBlast *core.Spell
 
+	HasDraeneiHitAura         bool
 	OtherRelevantStrAgiActive bool
-	HornOfWinter              *RuneSpell
+	HornOfWinter              *core.Spell
 	HornOfWinterAura          *core.Aura
 
 	// "CDs"
-	RuneTap     *RuneSpell
-	MarkOfBlood *RuneSpell
+	RuneTap     *core.Spell
+	MarkOfBlood *core.Spell
 
-	BloodTap     *RuneSpell
+	BloodTap     *core.Spell
 	BloodTapAura *core.Aura
 
-	AntiMagicShell     *RuneSpell
+	AntiMagicShell     *core.Spell
 	AntiMagicShellAura *core.Aura
 
-	EmpowerRuneWeapon *RuneSpell
+	EmpowerRuneWeapon *core.Spell
 
-	UnbreakableArmor     *RuneSpell
+	UnbreakableArmor     *core.Spell
 	UnbreakableArmorAura *core.Aura
 
-	VampiricBlood     *RuneSpell
+	VampiricBlood     *core.Spell
 	VampiricBloodAura *core.Aura
 
-	BoneShield     *RuneSpell
+	BoneShield     *core.Spell
 	BoneShieldAura *core.Aura
 
-	UnholyFrenzy *core.Spell
+	UnholyFrenzy     *core.Spell
+	UnholyFrenzyAura *core.Aura
 
-	IceboundFortitude     *RuneSpell
+	IceboundFortitude     *core.Spell
 	IceboundFortitudeAura *core.Aura
 
-	DeathPact *RuneSpell
+	DeathPact *core.Spell
 
 	// Used only to proc stuff as its free GCD
 	MindFreezeSpell *core.Spell
 
 	// Diseases
-	FrostFeverSpell     *RuneSpell
-	BloodPlagueSpell    *RuneSpell
-	FrostFeverDisease   []*core.Dot
-	BloodPlagueDisease  []*core.Dot
+	FrostFeverSpell     *core.Spell
+	BloodPlagueSpell    *core.Spell
 	FrostFeverExtended  []int
 	BloodPlagueExtended []int
 
 	UnholyBlightSpell *core.Spell
-	UnholyBlightDots  []*core.Dot
 
 	// Talent Auras
 	KillingMachineAura  *core.Aura
 	IcyTalonsAura       *core.Aura
 	DesolationAura      *core.Aura
-	NecrosisAura        *core.Aura
 	BloodCakedBladeAura *core.Aura
 	ButcheryAura        *core.Aura
 	ButcheryPA          *core.PendingAction
 	RimeAura            *core.Aura
 	BladeBarrierAura    *core.Aura
-	SuddenDoomAura      *core.Aura
 	ScentOfBloodAura    *core.Aura
 	WillOfTheNecropolis *core.Aura
 
@@ -190,16 +196,17 @@ type Deathknight struct {
 	LastDiseaseDamage float64
 	LastTickTime      time.Duration
 	WanderingPlague   *core.Spell
-
-	Deathchill     *RuneSpell
-	DeathchillAura *core.Aura
+	NecrosisCoeff     float64
+	Necrosis          *core.Spell
+	Deathchill        *core.Spell
+	DeathchillAura    *core.Aura
 
 	// Presences
-	BloodPresence      *RuneSpell
+	BloodPresence      *core.Spell
 	BloodPresenceAura  *core.Aura
-	FrostPresence      *RuneSpell
+	FrostPresence      *core.Spell
 	FrostPresenceAura  *core.Aura
-	UnholyPresence     *RuneSpell
+	UnholyPresence     *core.Spell
 	UnholyPresenceAura *core.Aura
 
 	// Debuffs
@@ -207,6 +214,8 @@ type Deathknight struct {
 	EbonPlagueOrCryptFeverAura []*core.Aura
 
 	RoRTSBonus func(*core.Unit) float64 // is either RoR or TS bonus function based on talents
+
+	MakeTSRoRAssumptions bool
 }
 
 func (dk *Deathknight) ModifyDamageModifier(value float64) {
@@ -227,7 +236,8 @@ func (dk *Deathknight) GetCharacter() *core.Character {
 	return &dk.Character
 }
 
-func (dk *Deathknight) AddPartyBuffs(_ *proto.PartyBuffs) {
+func (dk *Deathknight) AddPartyBuffs(partyBuffs *proto.PartyBuffs) {
+	dk.HasDraeneiHitAura = partyBuffs.HeroicPresence
 }
 
 func (dk *Deathknight) AddRaidBuffs(raidBuffs *proto.RaidBuffs) {
@@ -294,6 +304,30 @@ func (dk *Deathknight) Initialize() {
 	dk.registerDeathPactSpell()
 
 	dk.registerUnholyFrenzyCD()
+
+	dk.RegisterAura(core.Aura{
+		Label:    "Last Cast Assigner",
+		Duration: core.NeverExpires,
+		OnReset: func(aura *core.Aura, sim *core.Simulation) {
+			aura.Activate(sim)
+		},
+		OnCastComplete: func(aura *core.Aura, sim *core.Simulation, spell *core.Spell) {
+			if spell.DefaultCast.GCD > 0 {
+				dk.LastCast = spell
+			}
+		},
+	})
+
+	if dk.Inputs.PrecastHornOfWinter {
+		dk.RegisterPrepullAction(-1500*time.Millisecond, func(sim *core.Simulation) {
+			dk.HornOfWinter.Cast(sim, nil)
+		})
+	}
+	if dk.Inputs.ArmyOfTheDeadType == proto.Deathknight_Rotation_PreCast {
+		dk.RegisterPrepullAction(-10*time.Second, func(sim *core.Simulation) {
+			dk.ArmyOfTheDead.Cast(sim, nil)
+		})
+	}
 }
 
 func (dk *Deathknight) registerMindFreeze() {
@@ -326,6 +360,8 @@ func (dk *Deathknight) registerMindFreeze() {
 
 func (dk *Deathknight) ResetBonusCoeffs() {
 	dk.bonusCoeffs = DeathknightCoeffs{
+		runeTapHealing: 0,
+
 		glacierRotBonusCoeff:      1,
 		mercilessCombatBonusCoeff: 1,
 		impurityBonusCoeff:        1,
@@ -336,25 +372,16 @@ func (dk *Deathknight) ResetBonusCoeffs() {
 	}
 }
 
-func (dk *Deathknight) Prepull(sim *core.Simulation) {
-	if dk.Inputs.ArmyOfTheDeadType == proto.Deathknight_Rotation_PreCast {
-		dk.PrecastArmyOfTheDead(sim)
-	}
-
-	if dk.Inputs.PrecastHornOfWinter {
-		dk.HornOfWinter.CD.UsePrePull(sim, 1500*time.Millisecond)
-	}
-}
-
 func (dk *Deathknight) Reset(sim *core.Simulation) {
 	dk.LastTickTime = -1
 	dk.LastCast = nil
 	dk.NextCast = nil
 	dk.DeathStrikeHeals = dk.DeathStrikeHeals[:0]
+	dk.MakeTSRoRAssumptions = sim.Raid.Size() <= 1
 }
 
 func (dk *Deathknight) IsFuStrike(spell *core.Spell) bool {
-	return spell == dk.Obliterate.Spell || spell == dk.ScourgeStrike.Spell || spell == dk.DeathStrike.Spell
+	return spell == dk.Obliterate || spell == dk.ScourgeStrike || spell == dk.DeathStrike
 }
 
 func (dk *Deathknight) HasMajorGlyph(glyph proto.DeathknightMajorGlyph) bool {
@@ -364,7 +391,7 @@ func (dk *Deathknight) HasMinorGlyph(glyph proto.DeathknightMinorGlyph) bool {
 	return dk.HasGlyph(int32(glyph))
 }
 
-func NewDeathknight(character core.Character, inputs DeathknightInputs, talents string) *Deathknight {
+func NewDeathknight(character core.Character, inputs DeathknightInputs, talents string, preNerfedGargoyle bool) *Deathknight {
 	dk := &Deathknight{
 		Character:  character,
 		Talents:    &proto.DeathknightTalents{},
@@ -409,14 +436,20 @@ func NewDeathknight(character core.Character, inputs DeathknightInputs, talents 
 	dk.AddStatDependency(stats.Agility, stats.Dodge, core.DodgeRatingPerDodgeChance/84.74576271)
 	dk.AddStatDependency(stats.Strength, stats.AttackPower, 2)
 	dk.AddStatDependency(stats.Strength, stats.Parry, 0.25)
+	dk.AddStatDependency(stats.BonusArmor, stats.Armor, 1)
 
 	dk.PseudoStats.CanParry = true
+	dk.PseudoStats.GracefulCastCDFailures = true
 
 	// Base dodge unaffected by Diminishing Returns
 	dk.PseudoStats.BaseDodge += 0.03664
 	dk.PseudoStats.BaseParry += 0.05
 
 	dk.PseudoStats.MeleeHasteRatingPerHastePercent /= 1.3
+
+	if dk.Talents.SummonGargoyle {
+		dk.Gargoyle = dk.NewGargoyle(!preNerfedGargoyle)
+	}
 
 	dk.Ghoul = dk.NewGhoulPet(dk.Talents.MasterOfGhouls)
 	dk.OnGargoyleStartFirstCast = func() {}
@@ -434,7 +467,9 @@ func NewDeathknight(character core.Character, inputs DeathknightInputs, talents 
 		}
 	}
 
-	dk.RuneWeapon = dk.NewRuneWeapon()
+	if dk.Talents.DancingRuneWeapon {
+		dk.RuneWeapon = dk.NewRuneWeapon()
+	}
 
 	dk.RotationSequence = &Sequence{}
 
@@ -442,31 +477,19 @@ func NewDeathknight(character core.Character, inputs DeathknightInputs, talents 
 }
 
 func (dk *Deathknight) AllDiseasesAreActive(target *core.Unit) bool {
-	return dk.FrostFeverDisease[target.Index].IsActive() && dk.BloodPlagueDisease[target.Index].IsActive()
+	return dk.FrostFeverSpell.Dot(target).IsActive() && dk.BloodPlagueSpell.Dot(target).IsActive()
 }
 
 func (dk *Deathknight) DiseasesAreActive(target *core.Unit) bool {
-	return dk.FrostFeverDisease[target.Index].IsActive() || dk.BloodPlagueDisease[target.Index].IsActive()
+	return dk.FrostFeverSpell.Dot(target).IsActive() || dk.BloodPlagueSpell.Dot(target).IsActive()
+}
+
+func (dk *Deathknight) DrwDiseasesAreActive(target *core.Unit) bool {
+	return dk.Talents.DancingRuneWeapon && dk.RuneWeapon.FrostFeverSpell.Dot(target).IsActive() || dk.RuneWeapon.BloodPlagueSpell.Dot(target).IsActive()
 }
 
 func (dk *Deathknight) bonusCritMultiplier(bonusTalentPoints int32) float64 {
 	return dk.MeleeCritMultiplier(1, 0.15*float64(bonusTalentPoints))
-}
-
-func (dk *Deathknight) KM() bool {
-	if dk.KillingMachineAura != nil {
-		return dk.KillingMachineAura.IsActive()
-	} else {
-		return false
-	}
-}
-
-func (dk *Deathknight) Rime() bool {
-	if dk.RimeAura != nil {
-		return dk.RimeAura.IsActive()
-	} else {
-		return false
-	}
 }
 
 func (dk *Deathknight) AverageDSHeal() float64 {

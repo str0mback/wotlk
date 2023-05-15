@@ -8,8 +8,7 @@ import (
 )
 
 func (warlock *Warlock) registerIncinerateSpell() {
-	spellCoeff := 0.713 * (1 + 0.04*float64(warlock.Talents.ShadowAndFlame))
-	mcCastMod := (1.0 - 0.1*float64(warlock.Talents.MoltenCore))
+	spellCoeff := 0.714 * (1 + 0.04*float64(warlock.Talents.ShadowAndFlame))
 
 	warlock.Incinerate = warlock.RegisterSpell(core.SpellConfig{
 		ActionID:     core.ActionID{SpellID: 47838},
@@ -26,18 +25,9 @@ func (warlock *Warlock) registerIncinerateSpell() {
 				GCD:      core.GCDDefault,
 				CastTime: time.Millisecond * time.Duration(2500-50*warlock.Talents.Emberstorm),
 			},
-			ModifyCast: func(_ *core.Simulation, _ *core.Spell, cast *core.Cast) {
-				totalMod := warlock.backdraftModifier()
-				if warlock.MoltenCoreAura.IsActive() {
-					totalMod *= mcCastMod
-				}
-				cast.GCD = time.Duration(float64(cast.GCD) * totalMod)
-				cast.CastTime = time.Duration(float64(cast.CastTime) * totalMod)
-			},
 		},
 
 		BonusCritRating: 0 +
-			warlock.masterDemonologistFireCrit +
 			core.TernaryFloat64(warlock.Talents.Devastation, 5*core.CritRatingPerCritChance, 0) +
 			core.TernaryFloat64(warlock.HasSetBonus(ItemSetDeathbringerGarb, 4), 5*core.CritRatingPerCritChance, 0) +
 			core.TernaryFloat64(warlock.HasSetBonus(ItemSetDarkCovensRegalia, 2), 5*core.CritRatingPerCritChance, 0),
@@ -51,7 +41,7 @@ func (warlock *Warlock) registerIncinerateSpell() {
 
 		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
 			var baseDamage float64
-			if warlock.ImmolateDot.IsActive() {
+			if warlock.Immolate.Dot(target).IsActive() {
 				baseDamage = sim.Roll(582+145, 676+169) + spellCoeff*spell.SpellPower()
 			} else {
 				baseDamage = sim.Roll(582, 676) + spellCoeff*spell.SpellPower()
@@ -61,13 +51,6 @@ func (warlock *Warlock) registerIncinerateSpell() {
 			spell.WaitTravelTime(sim, func(sim *core.Simulation) {
 				spell.DealDamage(sim, result)
 			})
-
-			if warlock.DemonicSoulAura.IsActive() {
-				warlock.DemonicSoulAura.Deactivate(sim)
-			}
-			if warlock.MoltenCoreAura.IsActive() {
-				warlock.MoltenCoreAura.RemoveStack(sim)
-			}
 		},
 	})
 }

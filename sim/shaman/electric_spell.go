@@ -26,10 +26,11 @@ const (
 // Shared precomputation logic for LB and CL.
 func (shaman *Shaman) newElectricSpellConfig(actionID core.ActionID, baseCost float64, baseCastTime time.Duration, isLightningOverload bool) core.SpellConfig {
 	spell := core.SpellConfig{
-		ActionID:    actionID,
-		SpellSchool: core.SpellSchoolNature,
-		ProcMask:    core.ProcMaskSpellDamage,
-		Flags:       SpellFlagElectric | SpellFlagFocusable,
+		ActionID:     actionID,
+		SpellSchool:  core.SpellSchoolNature,
+		ProcMask:     core.ProcMaskSpellDamage,
+		Flags:        SpellFlagElectric | SpellFlagFocusable,
+		MetricSplits: 6,
 
 		ManaCost: core.ManaCostOptions{
 			BaseCost:   core.TernaryFloat64(isLightningOverload, 0, baseCost),
@@ -39,6 +40,9 @@ func (shaman *Shaman) newElectricSpellConfig(actionID core.ActionID, baseCost fl
 			DefaultCast: core.Cast{
 				CastTime: baseCastTime - time.Millisecond*100*time.Duration(shaman.Talents.LightningMastery),
 				GCD:      core.GCDDefault,
+			},
+			ModifyCast: func(sim *core.Simulation, spell *core.Spell, cast *core.Cast) {
+				spell.SetMetricsSplit(shaman.MaelstromWeaponAura.GetStacks())
 			},
 		},
 
@@ -56,6 +60,8 @@ func (shaman *Shaman) newElectricSpellConfig(actionID core.ActionID, baseCost fl
 		spell.Cast.DefaultCast.CastTime = 0
 		spell.Cast.DefaultCast.GCD = 0
 		spell.Cast.DefaultCast.Cost = 0
+		spell.Cast.ModifyCast = nil
+		spell.MetricSplits = 0
 		spell.DamageMultiplier *= 0.5
 		spell.ThreatMultiplier = 0
 	}
@@ -71,12 +77,4 @@ func (shaman *Shaman) electricSpellBonusDamage(spellCoeff float64) float64 {
 		core.TernaryFloat64(shaman.Equip[core.ItemSlotRanged].ID == TotemOfHex, 165, 0)
 
 	return bonusDamage * spellCoeff // These items do not benefit from the bonus coeff from shamanism.
-}
-
-// Shared LB/CL logic that is dynamic, i.e. can't be precomputed.
-func (shaman *Shaman) applyElectricSpellCastInitModifiers(spell *core.Spell, cast *core.Cast) {
-	shaman.modifyCastClearcasting(spell, cast)
-	if shaman.ElementalMasteryAura.IsActive() {
-		cast.CastTime = 0
-	}
 }

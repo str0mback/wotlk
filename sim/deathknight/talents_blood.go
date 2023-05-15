@@ -34,11 +34,11 @@ func (dk *Deathknight) ApplyBloodTalents() {
 
 	// Two Handed Specialization
 	if dk.HasMHWeapon() && dk.Equip[proto.ItemSlot_ItemSlotMainHand].HandType == proto.HandType_HandTypeTwoHand {
-		dk.PseudoStats.SchoolDamageDealtMultiplier[stats.SchoolIndexPhysical] *= 1 + 0.01*float64(dk.Talents.TwoHandedWeaponSpecialization)
+		dk.PseudoStats.SchoolDamageDealtMultiplier[stats.SchoolIndexPhysical] *= 1 + 0.02*float64(dk.Talents.TwoHandedWeaponSpecialization)
 	}
 
 	// Rune Tap
-	// TODO: Implemented outside
+	// Implemented outside
 
 	// Dark Conviction
 	dk.AddStats(stats.Stats{
@@ -47,16 +47,16 @@ func (dk *Deathknight) ApplyBloodTalents() {
 	})
 
 	// Death Rune Mastery
-	// TODO: Implemented outside
+	// Implemented outside
 
 	// Improved Rune Tap
-	// TODO: Implemented outside
+	// Implemented outside
 
 	// Spell Deflection
 	dk.applySpellDeflection()
 
 	// Vendetta
-	// TODO: Pointless
+	// Pointless
 
 	// Bloody Strikes
 	// Implemented
@@ -72,7 +72,7 @@ func (dk *Deathknight) ApplyBloodTalents() {
 	}
 
 	// Mark of Blood
-	// TODO: Implement
+	// Implemented
 
 	dk.applyBloodworms()
 	dk.applyBloodyVengeance()
@@ -169,12 +169,20 @@ func (dk *Deathknight) applyScentOfBlood() {
 	}))
 }
 
-func (dk *Deathknight) bloodyStrikesBonus(spell *RuneSpell) float64 {
-	if spell == dk.BloodStrike {
+type BloodyStrikesBonusSpell int8
+
+const (
+	BloodyStrikesBS = iota + 1
+	BloodyStrikesHS
+	BloodyStrikesBB
+)
+
+func (dk *Deathknight) bloodyStrikesBonus(spell BloodyStrikesBonusSpell) float64 {
+	if spell == BloodyStrikesBS {
 		return []float64{1.0, 1.05, 1.1, 1.15}[dk.Talents.BloodyStrikes]
-	} else if spell == dk.HeartStrike {
+	} else if spell == BloodyStrikesHS {
 		return []float64{1.0, 1.15, 1.3, 1.45}[dk.Talents.BloodyStrikes]
-	} else if spell == dk.BloodBoil {
+	} else if spell == BloodyStrikesBB {
 		return []float64{1.0, 1.1, 1.2, 1.3}[dk.Talents.BloodyStrikes]
 	}
 	return 1.0
@@ -208,13 +216,18 @@ func (dk *Deathknight) applyBladeBarrier() {
 	dk.BladeBarrierAura = dk.RegisterAura(core.Aura{
 		Label:    "Blade Barrier",
 		ActionID: actionID,
-		Duration: time.Second * 10.0,
+		Duration: time.Second * 10,
 
 		OnGain: func(aura *core.Aura, sim *core.Simulation) {
 			aura.Unit.PseudoStats.DamageTakenMultiplier *= damageTakenMult
 		},
 		OnExpire: func(aura *core.Aura, sim *core.Simulation) {
 			aura.Unit.PseudoStats.DamageTakenMultiplier /= damageTakenMult
+		},
+		OnCastComplete: func(aura *core.Aura, sim *core.Simulation, spell *core.Spell) {
+			if spell.DefaultCast.GCD > 0 {
+				aura.Refresh(sim)
+			}
 		},
 	})
 
@@ -293,13 +306,13 @@ func (dk *Deathknight) applySuddenDoom() {
 		return
 	}
 
-	procChance := 0.05 * float64(dk.Talents.SuddenDoom)
-
-	dk.SuddenDoomAura = dk.RegisterAura(core.Aura{
+	sdAura := dk.RegisterAura(core.Aura{
 		Label:    "Sudden Doom Proc",
 		ActionID: core.ActionID{SpellID: 49530},
 		Duration: core.NeverExpires,
 	})
+
+	procChance := 0.05 * float64(dk.Talents.SuddenDoom)
 
 	core.MakePermanent(dk.RegisterAura(core.Aura{
 		Label: "Sudden Doom",
@@ -308,14 +321,37 @@ func (dk *Deathknight) applySuddenDoom() {
 				return
 			}
 
-			if !dk.runeSpellComp(spell, dk.HeartStrike) && !dk.runeSpellComp(spell, dk.BloodStrike) {
+			if spell != dk.HeartStrike && spell != dk.HeartStrikeOffHit && spell != dk.BloodStrike {
 				return
 			}
 
 			if sim.RandomFloat("Sudden Doom Proc") < procChance {
-				dk.SuddenDoomAura.Activate(sim)
-				dk.DeathCoil.Cast(sim, dk.CurrentTarget)
-				dk.SuddenDoomAura.Deactivate(sim)
+				sdAura.Activate(sim)
+				dk.DeathCoil.SkipCastAndApplyEffects(sim, result.Target)
+				sdAura.Deactivate(sim)
+			}
+		},
+	}))
+
+	if !dk.Talents.DancingRuneWeapon {
+		return
+	}
+
+	core.MakePermanent(dk.RuneWeapon.RegisterAura(core.Aura{
+		Label: "Sudden Doom Drw",
+		OnSpellHitDealt: func(aura *core.Aura, sim *core.Simulation, spell *core.Spell, result *core.SpellResult) {
+			if !result.Landed() {
+				return
+			}
+
+			if spell != dk.RuneWeapon.HeartStrike && spell != dk.RuneWeapon.HeartStrikeOffHit {
+				return
+			}
+
+			if sim.RandomFloat("Sudden Doom Proc") < procChance {
+				sdAura.Activate(sim)
+				dk.RuneWeapon.DeathCoil.SkipCastAndApplyEffects(sim, result.Target)
+				sdAura.Deactivate(sim)
 			}
 		},
 	}))
@@ -326,20 +362,18 @@ func (dk *Deathknight) applyBloodGorged() {
 		return
 	}
 
-	bonusDamage := 1.1
-	armorPenRating := 10.0 * core.ArmorPenPerPercentArmor
-	bonusStats := stats.Stats{stats.ArmorPenetration: armorPenRating}
+	bonusDamage := 1.0 + 0.02*float64(dk.Talents.BloodGorged)
+	armorPenRating := float64(dk.Talents.BloodGorged) * 2.0 * core.ArmorPenPerPercentArmor
+	dk.AddStat(stats.ArmorPenetration, armorPenRating)
 
 	procAura := core.MakePermanent(dk.RegisterAura(core.Aura{
 		Label:    "Blood Gorged Proc",
 		ActionID: core.ActionID{SpellID: 50111},
 		OnGain: func(aura *core.Aura, sim *core.Simulation) {
 			aura.Unit.PseudoStats.DamageDealtMultiplier *= bonusDamage
-			aura.Unit.AddStatsDynamic(sim, bonusStats)
 		},
 		OnExpire: func(aura *core.Aura, sim *core.Simulation) {
 			aura.Unit.PseudoStats.DamageDealtMultiplier /= bonusDamage
-			aura.Unit.AddStatsDynamic(sim, bonusStats.Multiply(-1))
 		},
 	}))
 
@@ -369,7 +403,7 @@ func (dk *Deathknight) applyBloodworms() {
 	}
 
 	// For tracking purposes
-	procSpell := dk.RegisterSpell(nil, core.SpellConfig{
+	procSpell := dk.RegisterSpell(core.SpellConfig{
 		ActionID: core.ActionID{SpellID: 49543},
 		ApplyEffects: func(sim *core.Simulation, _ *core.Unit, _ *core.Spell) {
 			// Summon Bloodworms
@@ -379,7 +413,7 @@ func (dk *Deathknight) applyBloodworms() {
 				dk.Bloodworm[i].CancelGCDTimer(sim)
 			}
 		},
-	}, nil, nil)
+	})
 
 	core.MakePermanent(dk.RegisterAura(core.Aura{
 		Label: "Bloodworms Proc",

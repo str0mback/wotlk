@@ -19,11 +19,8 @@ func (druid *Druid) registerInnervateCD() {
 	innervateCD := core.InnervateCD
 
 	var innervateAura *core.Aura
-	var expectedManaPerInnervate float64
 	var innervateManaThreshold float64
-	var remainingInnervateUsages int
 	druid.RegisterResetEffect(func(sim *core.Simulation) {
-		expectedManaPerInnervate = innervateTarget.SpiritManaRegenPerSecond() * 5 * 20
 		if innervateTarget == druid.GetCharacter() {
 			if druid.StartingForm.Matches(Cat) {
 				// double shift + innervate cost.
@@ -36,10 +33,7 @@ func (druid *Druid) registerInnervateCD() {
 		} else {
 			innervateManaThreshold = core.InnervateManaThreshold(innervateTarget)
 		}
-		innervateAura = core.InnervateAura(innervateTarget, expectedManaPerInnervate, actionID.Tag)
-
-		remainingInnervateUsages = int(1 + (core.MaxDuration(0, sim.Duration))/innervateCD)
-		innervateTarget.ExpectedBonusMana += expectedManaPerInnervate * float64(remainingInnervateUsages)
+		innervateAura = core.InnervateAura(innervateTarget, actionID.Tag)
 	})
 
 	innervateSpell = druid.RegisterSpell(core.SpellConfig{
@@ -60,23 +54,7 @@ func (druid *Druid) registerInnervateCD() {
 			},
 		},
 
-		ApplyEffects: func(sim *core.Simulation, _ *core.Unit, _ *core.Spell) {
-			// Update expected bonus mana
-			newRemainingUsages := int(sim.GetRemainingDuration() / innervateCD)
-			//expectedBonusManaReduction := expectedManaPerInnervate * float64(remainingInnervateUsages-newRemainingUsages)
-			remainingInnervateUsages = newRemainingUsages
-
-			innervateAura.Activate(sim)
-		},
-	})
-
-	druid.AddMajorCooldown(core.MajorCooldown{
-		Spell: innervateSpell,
-		Type:  core.CooldownTypeMana,
-		CanActivate: func(sim *core.Simulation, character *core.Character) bool {
-			if character.CurrentMana() < innervateSpell.DefaultCast.Cost {
-				return false
-			}
+		ExtraCastCondition: func(sim *core.Simulation, target *core.Unit) bool {
 			// Technically this shouldn't be allowed in bear form either, but bear
 			// doesn't have shifting implemented in its rotation.
 			if druid.InForm(Cat) {
@@ -89,6 +67,15 @@ func (druid *Druid) registerInnervateCD() {
 
 			return true
 		},
+
+		ApplyEffects: func(sim *core.Simulation, _ *core.Unit, _ *core.Spell) {
+			innervateAura.Activate(sim)
+		},
+	})
+
+	druid.AddMajorCooldown(core.MajorCooldown{
+		Spell: innervateSpell,
+		Type:  core.CooldownTypeMana,
 		ShouldActivate: func(sim *core.Simulation, character *core.Character) bool {
 			// Innervate needs to be activated as late as possible to maximize DPS. The issue is that
 			// innervate gives so much mana that it can cause Super Mana Potion or Dark Rune usages

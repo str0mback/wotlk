@@ -30,16 +30,7 @@ type Encounter struct {
 }
 
 func NewEncounter(options *proto.Encounter) Encounter {
-	if options.ExecuteProportion_20 == 0 {
-		options.ExecuteProportion_20 = 0.2
-	}
-	if options.ExecuteProportion_25 == 0 {
-		options.ExecuteProportion_25 = 0.25
-	}
 	options.ExecuteProportion_25 = MaxFloat(options.ExecuteProportion_25, options.ExecuteProportion_20)
-	if options.ExecuteProportion_35 == 0 {
-		options.ExecuteProportion_35 = 0.35
-	}
 	options.ExecuteProportion_35 = MaxFloat(options.ExecuteProportion_35, options.ExecuteProportion_25)
 
 	encounter := Encounter{
@@ -179,7 +170,10 @@ func (target *Target) init(sim *Simulation) {
 
 func (target *Target) Reset(sim *Simulation) {
 	target.Unit.reset(sim, nil)
-	//target.SetGCDTimer(sim, 0)
+	target.SetGCDTimer(sim, 0)
+	if target.AI != nil {
+		target.AI.Reset(sim)
+	}
 }
 
 func (target *Target) Advance(sim *Simulation, elapsedTime time.Duration) {
@@ -222,11 +216,11 @@ type AttackTable struct {
 	GlanceMultiplier float64
 	CritSuppression  float64
 
-	DamageDealtMultiplier               float64 // attacker buff, applied in applyAttackerModifiers()
-	DamageTakenMultiplier               float64 // defender debuff, applied in applyTargetModifiers()
-	NatureDamageTakenMultiplier         float64
-	PeriodicShadowDamageTakenMultiplier float64
-	HealingDealtMultiplier              float64
+	DamageDealtMultiplier        float64 // attacker buff, applied in applyAttackerModifiers()
+	DamageTakenMultiplier        float64 // defender debuff, applied in applyTargetModifiers()
+	NatureDamageTakenMultiplier  float64
+	HauntSEDamageTakenMultiplier float64
+	HealingDealtMultiplier       float64
 }
 
 func NewAttackTable(attacker *Unit, defender *Unit) *AttackTable {
@@ -234,11 +228,11 @@ func NewAttackTable(attacker *Unit, defender *Unit) *AttackTable {
 		Attacker: attacker,
 		Defender: defender,
 
-		DamageDealtMultiplier:               1,
-		DamageTakenMultiplier:               1,
-		NatureDamageTakenMultiplier:         1,
-		PeriodicShadowDamageTakenMultiplier: 1,
-		HealingDealtMultiplier:              1,
+		DamageDealtMultiplier:        1,
+		DamageTakenMultiplier:        1,
+		NatureDamageTakenMultiplier:  1,
+		HauntSEDamageTakenMultiplier: 1,
+		HealingDealtMultiplier:       1,
 	}
 
 	if defender.Type == EnemyUnit {

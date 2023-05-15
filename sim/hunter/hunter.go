@@ -76,18 +76,12 @@ type Hunter struct {
 	// Fake spells to encapsulate weaving logic.
 	TrapWeaveSpell *core.Spell
 
-	BlackArrowDot      *core.Dot
-	ExplosiveTrapDot   *core.Dot
-	ExplosiveShotR4Dot *core.Dot
-	ExplosiveShotR3Dot *core.Dot
-	SerpentStingDot    *core.Dot
-
 	AspectOfTheDragonhawkAura *core.Aura
 	AspectOfTheViperAura      *core.Aura
 	ImprovedSteadyShotAura    *core.Aura
 	LockAndLoadAura           *core.Aura
 	RapidFireAura             *core.Aura
-	ScorpidStingAura          *core.Aura
+	ScorpidStingAuras         core.AuraArray
 	TalonOfAlarAura           *core.Aura
 
 	CustomRotation *common.CustomRotation
@@ -156,12 +150,12 @@ func (hunter *Hunter) Initialize() {
 	if hunter.CustomRotation == nil {
 		hunter.Rotation.Type = proto.Hunter_Rotation_SingleTarget
 	}
-}
 
-func (hunter *Hunter) Prepull(sim *core.Simulation) {
 	if hunter.Options.UseHuntersMark {
-		huntersMarkAura := core.HuntersMarkAura(hunter.CurrentTarget, hunter.Talents.ImprovedHuntersMark, hunter.HasMajorGlyph(proto.HunterMajorGlyph_GlyphOfHuntersMark))
-		huntersMarkAura.Activate(sim)
+		hunter.RegisterPrepullAction(0, func(sim *core.Simulation) {
+			huntersMarkAura := core.HuntersMarkAura(hunter.CurrentTarget, hunter.Talents.ImprovedHuntersMark, hunter.HasMajorGlyph(proto.HunterMajorGlyph_GlyphOfHuntersMark))
+			huntersMarkAura.Activate(sim)
+		})
 	}
 }
 

@@ -8,7 +8,7 @@ import (
 )
 
 func (warrior *Warrior) registerRevengeSpell(cdTimer *core.Timer) {
-	actionID := core.ActionID{SpellID: 30357}
+	actionID := core.ActionID{SpellID: 57823}
 
 	warrior.revengeProcAura = warrior.RegisterAura(core.Aura{
 		Label:    "Revenge",
@@ -16,12 +16,27 @@ func (warrior *Warrior) registerRevengeSpell(cdTimer *core.Timer) {
 		ActionID: actionID,
 	})
 
-	hasGlyph := warrior.HasMajorGlyph(proto.WarriorMajorGlyph_GlyphOfRevenge)
-	if hasGlyph {
-		warrior.glyphOfRevengeProcAura = warrior.RegisterAura(core.Aura{
+	var glyphOfRevengeProcAura *core.Aura
+	if warrior.HasMajorGlyph(proto.WarriorMajorGlyph_GlyphOfRevenge) {
+		glyphOfRevengeProcAura = warrior.RegisterAura(core.Aura{
 			Label:    "Glyph of Revenge",
 			Duration: core.NeverExpires,
 			ActionID: core.ActionID{SpellID: 58398},
+			OnGain: func(aura *core.Aura, sim *core.Simulation) {
+				if warrior.HeroicStrikeOrCleave.SpellID == 47450 {
+					warrior.HeroicStrikeOrCleave.CostMultiplier -= 1
+				}
+			},
+			OnExpire: func(aura *core.Aura, sim *core.Simulation) {
+				if warrior.HeroicStrikeOrCleave.SpellID == 47450 {
+					warrior.HeroicStrikeOrCleave.CostMultiplier += 1
+				}
+			},
+			OnCastComplete: func(aura *core.Aura, sim *core.Simulation, spell *core.Spell) {
+				if spell == warrior.HeroicStrikeOrCleave && warrior.HeroicStrikeOrCleave.SpellID == 47450 {
+					aura.Deactivate(sim)
+				}
+			},
 		})
 	}
 
@@ -70,6 +85,9 @@ func (warrior *Warrior) registerRevengeSpell(cdTimer *core.Timer) {
 				Duration: cooldownDur,
 			},
 		},
+		ExtraCastCondition: func(sim *core.Simulation, target *core.Unit) bool {
+			return warrior.StanceMatches(DefensiveStance) && warrior.revengeProcAura.IsActive()
+		},
 
 		DamageMultiplier: 1.0 + 0.1*float64(warrior.Talents.UnrelentingAssault) + 0.3*float64(warrior.Talents.ImprovedRevenge),
 		CritMultiplier:   warrior.critMultiplier(mh),
@@ -93,16 +111,9 @@ func (warrior *Warrior) registerRevengeSpell(cdTimer *core.Timer) {
 
 			warrior.revengeProcAura.Deactivate(sim)
 
-			if warrior.glyphOfRevengeProcAura != nil {
-				warrior.glyphOfRevengeProcAura.Activate(sim)
+			if glyphOfRevengeProcAura != nil {
+				glyphOfRevengeProcAura.Activate(sim)
 			}
 		},
 	})
-}
-
-func (warrior *Warrior) CanRevenge(sim *core.Simulation) bool {
-	return warrior.revengeProcAura.IsActive() &&
-		warrior.StanceMatches(DefensiveStance) &&
-		warrior.CurrentRage() >= warrior.Revenge.DefaultCast.Cost &&
-		warrior.Revenge.IsReady(sim)
 }

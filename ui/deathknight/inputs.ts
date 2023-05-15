@@ -1,9 +1,12 @@
-import { RaidTarget, Spec } from '../core/proto/common.js';
+import { ItemSlot, RaidTarget, Spec } from '../core/proto/common.js';
 import { ActionId } from '../core/proto_utils/action_id.js';
 
 import {
 	DeathknightTalents as DeathKnightTalents,
 	Deathknight_Rotation_ArmyOfTheDead as ArmyOfTheDead,
+	Deathknight_Rotation_DrwDiseases as DrwDiseases,
+	Deathknight_Rotation_BloodOpener as BloodOpener,
+	Deathknight_Rotation_BloodSpell as BloodSpell,
 	Deathknight_Rotation_FirstDisease as FirstDisease,
 	Deathknight_Rotation_DeathAndDecayPrio as DeathAndDecayPrio,
 	Deathknight_Rotation_Presence as StartingPresence,
@@ -13,6 +16,7 @@ import {
 	Deathknight_Rotation_CustomSpellOption as CustomSpellOption,
 	Deathknight_Rotation as DeathKnightRotation,
 	Deathknight_Options as DeathKnightOptions,
+	DeathknightMajorGlyph,
 } from '../core/proto/deathknight.js';
 
 import * as InputHelpers from '../core/components/input_helpers.js';
@@ -70,6 +74,14 @@ export const PrecastHornOfWinter = InputHelpers.makeSpecOptionsBooleanInput<Spec
 	labelTooltip: 'Precast Horn of Winter for 10 extra runic power before fight.',
 });
 
+export const DrwPestiApply = InputHelpers.makeSpecOptionsBooleanInput<Spec.SpecDeathknight>({
+	fieldName: 'drwPestiApply',
+	label: 'DRW Pestilence Add',
+	labelTooltip: 'There is currently an interaction with DRW and pestilence where you can use pestilence to force DRW to apply diseases if they are already applied by the DK. It only works with Glyph of Disease and if there is an off target. This toggle forces the sim to assume there is an off target.',
+	showWhen: (player: Player<Spec.SpecDeathknight>) => !player.getRotation().autoRotation && player.getTalentTree() == 0 && (player.getGlyphs().major1 == DeathknightMajorGlyph.GlyphOfDisease || player.getGlyphs().major2 == DeathknightMajorGlyph.GlyphOfDisease|| player.getGlyphs().major3 == DeathknightMajorGlyph.GlyphOfDisease),
+	changeEmitter: (player: Player<Spec.SpecDeathknight>) => TypedEvent.onAny([player.specOptionsChangeEmitter, player.rotationChangeEmitter, player.talentsChangeEmitter]),
+});
+
 export const DiseaseRefreshDuration = InputHelpers.makeRotationNumberInput<Spec.SpecDeathknight>({
 	fieldName: 'diseaseRefreshDuration',
 	label: 'Disease Refresh Duration',
@@ -102,7 +114,7 @@ export const UseEmpowerRuneWeapon = InputHelpers.makeRotationBooleanInput<Spec.S
 	fieldName: 'useEmpowerRuneWeapon',
 	label: 'Empower Rune Weapon',
 	labelTooltip: 'Use Empower Rune Weapon in rotation.',
-	showWhen: (player: Player<Spec.SpecDeathknight>) => !player.getRotation().autoRotation && player.getRotation().frostRotationType != FrostRotationType.Custom,
+	showWhen: (player: Player<Spec.SpecDeathknight>) => !player.getRotation().autoRotation && player.getTalentTree() != 0 && player.getRotation().frostRotationType != FrostRotationType.Custom,
 });
 
 export const UseGargoyle = InputHelpers.makeRotationBooleanInput<Spec.SpecDeathknight>({
@@ -141,7 +153,7 @@ export const GargoylePresence = InputHelpers.makeRotationEnumInput<Spec.SpecDeat
 		{ name: 'Blood', value: StartingPresence.Blood },
 		{ name: 'Unholy', value: StartingPresence.Unholy },
 	],
-	showWhen: (player: Player<Spec.SpecDeathknight>) => player.getTalents().summonGargoyle && !player.getRotation().autoRotation && player.getRotation().nerfedGargoyle,
+	showWhen: (player: Player<Spec.SpecDeathknight>) => player.getTalents().summonGargoyle && !player.getRotation().autoRotation && !player.getRotation().preNerfedGargoyle,
 	changeEmitter: (player: Player<Spec.SpecDeathknight>) => TypedEvent.onAny([player.rotationChangeEmitter, player.talentsChangeEmitter]),
 });
 
@@ -214,11 +226,11 @@ export const BloodRuneFillerInput = InputHelpers.makeRotationEnumInput<Spec.Spec
 	changeEmitter: (player: Player<Spec.SpecDeathknight>) => TypedEvent.onAny([player.rotationChangeEmitter, player.talentsChangeEmitter]),
 })
 
-export const NerfedGargoyleInput = InputHelpers.makeRotationBooleanInput<Spec.SpecDeathknight>({
-	fieldName: 'nerfedGargoyle',
-	label: 'Nerfed Gargoyle (no haste snapshot)',
-	labelTooltip: "Use updated PTR Gargoyle that doesn't snapshot haste",
-	showWhen: (player: Player<Spec.SpecDeathknight>) => player.getTalents().summonGargoyle && !player.getRotation().autoRotation,
+export const PreNerfedGargoyleInput = InputHelpers.makeRotationBooleanInput<Spec.SpecDeathknight>({
+	fieldName: 'preNerfedGargoyle',
+	label: 'Pre-Nerfed Gargoyle (haste snapshot)',
+	labelTooltip: "Use old Gargoyle that snapshots haste",
+	showWhen: (player: Player<Spec.SpecDeathknight>) => player.getTalents().summonGargoyle && !player.getRotation().autoRotation && player.sim.getShowExperimental(),
 	changeEmitter: (player: Player<Spec.SpecDeathknight>) => TypedEvent.onAny([player.rotationChangeEmitter, player.talentsChangeEmitter]),
 })
 
@@ -260,27 +272,19 @@ export const AvgAMSHitInput = InputHelpers.makeRotationNumberInput<Spec.SpecDeat
 	changeEmitter: (player: Player<Spec.SpecDeathknight>) => TypedEvent.onAny([player.rotationChangeEmitter, player.talentsChangeEmitter]),
 });
 
-export const OblitDelayDurationInput = InputHelpers.makeRotationNumberInput<Spec.SpecDeathknight>({
-	fieldName: 'oblitDelayDuration',
-	label: 'Oblit Delay (ms)',
-	labelTooltip: 'How long a FS/HB/HW can delay a Oblit by.',
-	showWhen: (player: Player<Spec.SpecDeathknight>) => player.getTalents().howlingBlast && !player.getRotation().autoRotation && player.getRotation().frostRotationType != FrostRotationType.Custom,
-	changeEmitter: (player: Player<Spec.SpecDeathknight>) => TypedEvent.onAny([player.rotationChangeEmitter, player.talentsChangeEmitter]),
-});
-
 export const UseAutoRotation = InputHelpers.makeRotationBooleanInput<Spec.SpecDeathknight>({
 	fieldName: 'autoRotation',
 	label: 'Automatic Rotation',
 	labelTooltip: 'Have sim automatically adjust rotation based on the scenario. This is still in development and currently only works for Unholy.',
 	changeEmitter: (player: Player<Spec.SpecDeathknight>) => TypedEvent.onAny([player.rotationChangeEmitter, player.talentsChangeEmitter]),
-showWhen: (player: Player<Spec.SpecDeathknight>) => !player.getTalents().howlingBlast,
+	showWhen: (player: Player<Spec.SpecDeathknight>) => !player.getTalents().howlingBlast,
 });
 
 export const DesyncRotation = InputHelpers.makeRotationBooleanInput<Spec.SpecDeathknight>({
 	fieldName: 'desyncRotation',
 	label: 'Use Desync Rotation',
 	labelTooltip: 'Use the Desync Rotation.',
-	showWhen: (player: Player<Spec.SpecDeathknight>) => player.getTalents().howlingBlast && !player.getRotation().autoRotation && player.sim.getShowExperimental(),
+	showWhen: (player: Player<Spec.SpecDeathknight>) => player.getTalents().howlingBlast && !player.getTalents().epidemic && !player.getRotation().autoRotation,
 	changeEmitter: (player: Player<Spec.SpecDeathknight>) => TypedEvent.onAny([player.rotationChangeEmitter, player.talentsChangeEmitter]),
 });
 
@@ -294,6 +298,52 @@ export const Presence = InputHelpers.makeRotationEnumInput<Spec.SpecDeathknight,
 		{ name: 'Unholy', value: StartingPresence.Unholy },
 	],
 	showWhen: (player: Player<Spec.SpecDeathknight>) => player.getTalents().howlingBlast && !player.getRotation().autoRotation,
+	changeEmitter: (player: Player<Spec.SpecDeathknight>) => TypedEvent.onAny([player.rotationChangeEmitter, player.talentsChangeEmitter]),
+});
+
+export const BloodSpenderInput = InputHelpers.makeRotationEnumInput<Spec.SpecDeathknight, BloodSpell>({
+	fieldName: 'bloodSpender',
+	label: 'Blood Spender',
+	labelTooltip: 'Chose how to use Blood Runes.',
+	values: [
+		{ name: 'Heart Strike', value: BloodSpell.HS },
+		{ name: 'Blood Boil', value: BloodSpell.BB },
+		{ name: 'Blood Strike', value: BloodSpell.BS },
+	],
+	showWhen: (player: Player<Spec.SpecDeathknight>) => !player.getRotation().autoRotation && player.getTalentTree() == 0,
+	changeEmitter: (player: Player<Spec.SpecDeathknight>) => TypedEvent.onAny([player.rotationChangeEmitter, player.talentsChangeEmitter]),
+});
+
+export const UseDancingRuneWeapon = InputHelpers.makeRotationBooleanInput<Spec.SpecDeathknight>({
+	fieldName: 'useDancingRuneWeapon',
+	label: 'Dancing Rune Weapon',
+	labelTooltip: 'Use Dancing Rune Weapon.',
+	showWhen: (player: Player<Spec.SpecDeathknight>) => player.getTalents().dancingRuneWeapon && !player.getRotation().autoRotation,
+	changeEmitter: (player: Player<Spec.SpecDeathknight>) => TypedEvent.onAny([player.rotationChangeEmitter, player.talentsChangeEmitter]),
+});
+
+export const DrwDiseasesInput = InputHelpers.makeRotationEnumInput<Spec.SpecDeathknight, DrwDiseases>({
+	fieldName: 'drwDiseases',
+	label: 'DRW Disease',
+	labelTooltip: 'Chose how to apply diseases for Dancing Rune Weapon.',
+	values: [
+		{ name: 'Do not apply', value: DrwDiseases.DoNotApply },
+		{ name: 'IT + PS', value: DrwDiseases.Normal },
+		{ name: 'Pestilence', value: DrwDiseases.Pestilence },
+	],
+	showWhen: (player: Player<Spec.SpecDeathknight>) => player.getRotation().useDancingRuneWeapon && !player.getRotation().autoRotation && player.getTalents().dancingRuneWeapon && player.getRotation().bloodOpener == BloodOpener.Standard,
+	changeEmitter: (player: Player<Spec.SpecDeathknight>) => TypedEvent.onAny([player.rotationChangeEmitter, player.talentsChangeEmitter]),
+});
+
+export const BloodOpenerInput = InputHelpers.makeRotationEnumInput<Spec.SpecDeathknight, BloodOpener>({
+	fieldName: 'bloodOpener',
+	label: 'Opener',
+	labelTooltip: 'Chose which opener to use.',
+	values: [
+		{ name: 'Standard', value: BloodOpener.Standard },
+		{ name: 'Incan', value: BloodOpener.Experimental_1 },
+	],
+	showWhen: (player: Player<Spec.SpecDeathknight>) => !player.getRotation().autoRotation && player.getTalentTree() == 0,
 	changeEmitter: (player: Player<Spec.SpecDeathknight>) => TypedEvent.onAny([player.rotationChangeEmitter, player.talentsChangeEmitter]),
 });
 
@@ -319,6 +369,38 @@ export const FrostCustomRotation = InputHelpers.makeCustomRotationInput<Spec.Spe
 	showWhen: (player: Player<Spec.SpecDeathknight>) => player.getRotation().frostRotationType == FrostRotationType.Custom,
 });
 
+export const EnableWeaponSwap = InputHelpers.makeRotationBooleanInput<Spec.SpecDeathknight>({
+	fieldName: 'enableWeaponSwap',
+	label: 'Enable Weapon Swapping',
+	showWhen: (player: Player<Spec.SpecDeathknight>) => !player.getRotation().autoRotation && player.getTalents().summonGargoyle && player.getRotation().useGargoyle,
+})
+
+export const WeaponSwapInputs = InputHelpers.MakeItemSwapInput<Spec.SpecDeathknight>({
+	fieldName: 'weaponSwap',
+	values: [
+		ItemSlot.ItemSlotMainHand,
+		ItemSlot.ItemSlotOffHand,
+		//ItemSlot.ItemSlotRanged, Not support yet
+	],
+	labelTooltip: '<b>Berserking</b> will be equipped when FC has procced and Berserking is not active.<br><br><b>Black Magic</b> will be prioed to swap during gargoyle or if gargoyle will be on CD for full BM Icd.',
+	showWhen: (player: Player<Spec.SpecDeathknight>) => !player.getRotation().autoRotation && player.getTalents().summonGargoyle && player.getRotation().useGargoyle && player.getRotation().enableWeaponSwap,
+})
+
+export const NewDrwInput = InputHelpers.makeSpecOptionsBooleanInput<Spec.SpecDeathknight>({
+	fieldName: 'newDrw',
+	label: 'PTR DRW Scaling',
+	showWhen: (player: Player<Spec.SpecDeathknight>) => player.getTalents().dancingRuneWeapon && player.getRotation().useDancingRuneWeapon,
+	changeEmitter: (player: Player<Spec.SpecDeathknight>) => TypedEvent.onAny([player.rotationChangeEmitter, player.talentsChangeEmitter]),
+})
+
+export const DiseaseDowntime = InputHelpers.makeSpecOptionsNumberInput<Spec.SpecDeathknight>({
+	fieldName: 'diseaseDowntime',
+	label: 'Disease Downtime',
+	labelTooltip: 'Maximum allowed downtime between disease applications.',
+	showWhen: (player: Player<Spec.SpecDeathknight>) => !player.getRotation().autoRotation && player.getTalentTree() == 2,
+	changeEmitter: (player: Player<Spec.SpecDeathknight>) => TypedEvent.onAny([player.rotationChangeEmitter, player.talentsChangeEmitter]),
+});
+
 export const DeathKnightRotationConfig = {
 	inputs: [
 		InputHelpers.makeRotationEnumInput<Spec.SpecDeathknight, FrostRotationType>({
@@ -335,23 +417,29 @@ export const DeathKnightRotationConfig = {
 		UseAutoRotation,
 		BloodTapGhoulFrenzy,
 		UseGargoyle,
+		EnableWeaponSwap,
+		WeaponSwapInputs,
 		UseEmpowerRuneWeapon,
+		UseDancingRuneWeapon,
+		NewDrwInput,
 		HoldErwArmy,
 		BloodTapInput,
+		BloodSpenderInput,
 		ArmyOfTheDeadInput,
+		//BloodOpenerInput,
+		DrwDiseasesInput,
 		FirstDiseaseInput,
 		StartingPresenceInput,
+		GargoylePresence,
 		BloodlustPresence,
 		FightPresence,
 		BloodRuneFillerInput,
 		UseDeathAndDecay,
-		OblitDelayDurationInput,
 		UseAMSInput,
 		AvgAMSSuccessRateInput,
 		AvgAMSHitInput,
 		DesyncRotation,
 		FrostCustomRotation,
-		NerfedGargoyleInput,
-		GargoylePresence,
+		PreNerfedGargoyleInput,
 	],
 };

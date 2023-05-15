@@ -7,22 +7,6 @@ import (
 	"github.com/wowsims/wotlk/sim/core/stats"
 )
 
-type StackingProcAura struct {
-	Aura          core.Aura
-	BonusPerStack stats.Stats
-}
-
-func MakeStackingAura(character *core.Character, config StackingProcAura) *core.Aura {
-	var bonusPerStack stats.Stats
-	config.Aura.OnInit = func(aura *core.Aura, sim *core.Simulation) {
-		bonusPerStack = config.BonusPerStack
-	}
-	config.Aura.OnStacksChange = func(aura *core.Aura, sim *core.Simulation, oldStacks int32, newStacks int32) {
-		character.AddStatsDynamic(sim, bonusPerStack.Multiply(float64(newStacks-oldStacks)))
-	}
-	return character.RegisterAura(config.Aura)
-}
-
 type StackingStatBonusEffect struct {
 	Name       string
 	ID         int32
@@ -41,7 +25,7 @@ func newStackingStatBonusEffect(config StackingStatBonusEffect) {
 	core.NewItemEffect(config.ID, func(agent core.Agent) {
 		character := agent.GetCharacter()
 
-		procAura := MakeStackingAura(character, StackingProcAura{
+		procAura := core.MakeStackingAura(character, core.StackingStatAura{
 			Aura: core.Aura{
 				Label:     config.Name + " Proc",
 				ActionID:  core.ActionID{ItemID: config.ID},
@@ -52,6 +36,7 @@ func newStackingStatBonusEffect(config StackingStatBonusEffect) {
 		})
 
 		core.MakeProcTriggerAura(&character.Unit, core.ProcTrigger{
+			ActionID:   core.ActionID{ItemID: config.ID},
 			Name:       config.Name,
 			Callback:   config.Callback,
 			ProcMask:   config.ProcMask,
@@ -87,7 +72,7 @@ func newStackingStatBonusCD(config StackingStatBonusCD) {
 	core.NewItemEffect(config.ID, func(agent core.Agent) {
 		character := agent.GetCharacter()
 
-		buffAura := MakeStackingAura(character, StackingProcAura{
+		buffAura := core.MakeStackingAura(character, core.StackingStatAura{
 			Aura: core.Aura{
 				Label:     config.Name + " Aura",
 				ActionID:  core.ActionID{ItemID: config.ID},
@@ -148,7 +133,7 @@ func init() {
 	core.NewItemEffect(38212, func(agent core.Agent) {
 		character := agent.GetCharacter()
 
-		procAura := MakeStackingAura(character, StackingProcAura{
+		procAura := core.MakeStackingAura(character, core.StackingStatAura{
 			Aura: core.Aura{
 				Label:     "Death Knight's Anguish Proc",
 				ActionID:  core.ActionID{ItemID: 38212},
@@ -169,6 +154,7 @@ func init() {
 			ProcMask:   core.ProcMaskMeleeOrRanged,
 			Outcome:    core.OutcomeLanded,
 			ProcChance: 0.1,
+			ActionID:   core.ActionID{ItemID: 38212},
 			ICD:        time.Second * 45,
 			Handler: func(sim *core.Simulation, _ *core.Spell, _ *core.SpellResult) {
 				procAura.Activate(sim)
@@ -219,7 +205,7 @@ func init() {
 		Duration:  time.Second * 10,
 		MaxStacks: 5,
 		Bonus:     stats.Stats{stats.SpellPower: 26},
-		Callback:  core.CallbackOnCastComplete,
+		Callback:  core.CallbackOnHealDealt | core.CallbackOnSpellHitDealt | core.CallbackOnPeriodicHealDealt | core.CallbackOnPeriodicDamageDealt,
 	})
 
 	core.AddEffectsToTest = false
@@ -316,7 +302,7 @@ func init() {
 		ID:          46051,
 		Duration:    time.Second * 20,
 		MaxStacks:   20,
-		Bonus:       stats.Stats{stats.MP5: 60},
+		Bonus:       stats.Stats{stats.MP5: 85},
 		CD:          time.Minute * 2,
 		Callback:    core.CallbackOnCastComplete,
 		IsDefensive: true,

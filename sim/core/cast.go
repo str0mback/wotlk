@@ -3,8 +3,6 @@ package core
 import (
 	"fmt"
 	"time"
-
-	"github.com/wowsims/wotlk/sim/core/stats"
 )
 
 // A cast corresponds to any action which causes the in-game castbar to be
@@ -61,6 +59,7 @@ type Cast struct {
 func (cast Cast) EffectiveTime() time.Duration {
 	gcd := cast.GCD
 	if cast.GCD != 0 {
+		// TODO: isn't this wrong for spells like shadowfury, that have a reduced GCD?
 		gcd = MaxDuration(GCDMin, gcd)
 	}
 	fullCastTime := cast.CastTime + cast.ChannelTime + cast.AfterCastDelay
@@ -74,22 +73,20 @@ type CastSuccessFunc func(*Simulation, *Unit) bool
 
 func (spell *Spell) makeCastFunc(config CastConfig, onCastComplete CastFunc) CastSuccessFunc {
 	return spell.wrapCastFuncInit(config,
-		spell.wrapCastFuncResources(config,
-			spell.wrapCastFuncHaste(config,
-				spell.wrapCastFuncGCD(config,
-					spell.wrapCastFuncCooldown(config,
-						spell.wrapCastFuncSharedCooldown(config,
-							spell.makeCastFuncWait(config, onCastComplete)))))))
+		spell.wrapCastFuncExtraCond(config,
+			spell.wrapCastFuncCDsReady(config,
+				spell.wrapCastFuncResources(config,
+					spell.wrapCastFuncHaste(config,
+						spell.wrapCastFuncGCD(config,
+							spell.wrapCastFuncCooldown(config,
+								spell.wrapCastFuncSharedCooldown(config,
+									spell.makeCastFuncWait(config, onCastComplete)))))))))
 }
 
 func (spell *Spell) ApplyCostModifiers(cost float64) float64 {
-	if spell.Unit.PseudoStats.NoCost {
-		return 0
-	} else {
-		cost -= spell.Unit.PseudoStats.CostReduction
-		cost *= spell.Unit.PseudoStats.CostMultiplier
-		return MaxFloat(0, cost*spell.CostMultiplier)
-	}
+	cost -= spell.Unit.PseudoStats.CostReduction
+	cost = MaxFloat(0, cost*spell.Unit.PseudoStats.CostMultiplier)
+	return MaxFloat(0, cost*spell.CostMultiplier)
 }
 
 func (spell *Spell) wrapCastFuncInit(config CastConfig, onCastComplete CastSuccessFunc) CastSuccessFunc {
@@ -106,60 +103,71 @@ func (spell *Spell) wrapCastFuncInit(config CastConfig, onCastComplete CastSucce
 		modifyCast := config.ModifyCast
 		return func(sim *Simulation, target *Unit) bool {
 			spell.CurCast = spell.DefaultCast
+			cost := spell.CurCast.Cost
 			modifyCast(sim, spell, &spell.CurCast)
+			if cost != spell.CurCast.Cost {
+				// Costs need to be modified using the unit and spell multipliers, so that
+				// their affects are also visible in the spell.CanCast() function, which
+				// does not invoke ModifyCast.
+				panic("May not modify cost in ModifyCast!")
+			}
 			return onCastComplete(sim, target)
 		}
 	}
 }
 
-func (spell *Spell) wrapCastFuncResources(config CastConfig, onCastComplete CastFunc) CastSuccessFunc {
-	if spell.ResourceType == 0 || spell.DefaultCast.Cost == 0 {
+func (spell *Spell) wrapCastFuncExtraCond(config CastConfig, onCastComplete CastSuccessFunc) CastSuccessFunc {
+	if spell.ExtraCastCondition == nil {
+		return onCastComplete
+	} else {
 		return func(sim *Simulation, target *Unit) bool {
-			onCastComplete(sim, target)
-			return true
-		}
-	}
-
-	if spell.Cost != nil {
-		return func(sim *Simulation, target *Unit) bool {
-			if !spell.Cost.MeetsRequirement(spell) {
-				if sim.Log != nil && !spell.Flags.Matches(SpellFlagNoLogs) {
-					spell.Cost.LogCostFailure(sim, spell)
+			if spell.ExtraCastCondition(sim, target) {
+				return onCastComplete(sim, target)
+			} else {
+				if sim.Log != nil {
+					sim.Log("Failed cast because of extra condition")
 				}
 				return false
 			}
-			onCastComplete(sim, target)
-			return true
 		}
 	}
+}
 
-	switch spell.ResourceType {
-	case stats.RunicPower:
+func (spell *Spell) wrapCastFuncCDsReady(config CastConfig, onCastComplete CastSuccessFunc) CastSuccessFunc {
+	if spell.Unit.PseudoStats.GracefulCastCDFailures {
 		return func(sim *Simulation, target *Unit) bool {
-			// Rune spending is currently handled in DK codebase.
-			// This verifies that the user has the resources but does not spend.
-			if spell.CurCast.Cost != 0 {
-				cost := RuneCost(spell.CurCast.Cost)
-				if !cost.HasRune() {
-					if float64(cost.RunicPower()) > spell.Unit.CurrentRunicPower() {
-						return false
-					}
-				} else {
-					// Given cost might not be what is actually paid.
-					//  Calculate what combination of runes can actually pay for this spell.
-					optCost := spell.Unit.OptimalRuneCost(cost)
-					if optCost == 0 { // no combo of runes to fulfill cost
-						return false
-					}
-					spell.CurCast.Cost = float64(optCost) // assign chosen runes to the cost
+			if spell.IsReady(sim) {
+				return onCastComplete(sim, target)
+			} else {
+				if sim.Log != nil {
+					sim.Log("Failed cast because of CDs")
 				}
+				return false
 			}
+		}
+	} else {
+		return onCastComplete
+	}
+}
+
+func (spell *Spell) wrapCastFuncResources(config CastConfig, onCastComplete CastFunc) CastSuccessFunc {
+	if spell.Cost == nil {
+		return func(sim *Simulation, target *Unit) bool {
 			onCastComplete(sim, target)
 			return true
 		}
 	}
 
-	panic("Invalid resource type")
+	return func(sim *Simulation, target *Unit) bool {
+		if !spell.Cost.MeetsRequirement(spell) {
+			if sim.Log != nil && !spell.Flags.Matches(SpellFlagNoLogs) {
+				spell.Cost.LogCostFailure(sim, spell)
+			}
+			return false
+		}
+		onCastComplete(sim, target)
+		return true
+	}
 }
 
 func (spell *Spell) wrapCastFuncHaste(config CastConfig, onCastComplete CastFunc) CastFunc {

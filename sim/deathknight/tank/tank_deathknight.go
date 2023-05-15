@@ -27,7 +27,8 @@ type TankDeathknight struct {
 	*deathknight.Deathknight
 
 	switchIT   bool
-	BloodSpell *deathknight.RuneSpell
+	BloodSpell *core.Spell
+	FuSpell    *core.Spell
 
 	Rotation *proto.TankDeathknight_Rotation
 }
@@ -39,7 +40,7 @@ func NewTankDeathknight(character core.Character, options *proto.Player) *TankDe
 		Deathknight: deathknight.NewDeathknight(character, deathknight.DeathknightInputs{
 			IsDps:              false,
 			StartingRunicPower: dkOptions.Options.StartingRunicPower,
-		}, options.TalentsString),
+		}, options.TalentsString, false),
 		Rotation: dkOptions.Rotation,
 	}
 
@@ -50,13 +51,20 @@ func NewTankDeathknight(character core.Character, options *proto.Player) *TankDe
 		OffHand:        tankDk.WeaponFromOffHand(tankDk.DefaultMeleeCritMultiplier()),
 		AutoSwingMelee: true,
 		ReplaceMHSwing: func(sim *core.Simulation, mhSwingSpell *core.Spell) *core.Spell {
-			if tankDk.RuneStrike.CanCast(sim) {
-				return tankDk.RuneStrike.Spell
+			if tankDk.RuneStrike.CanCast(sim, nil) {
+				return tankDk.RuneStrike
 			} else {
 				return nil
 			}
 		},
 	})
+
+	healingModel := options.HealingModel
+	if healingModel != nil {
+		if healingModel.InspirationUptime > 0.0 {
+			core.ApplyInspiration(tankDk.GetCharacter(), healingModel.InspirationUptime)
+		}
+	}
 
 	return tankDk
 }
@@ -82,8 +90,6 @@ func (dk *TankDeathknight) SetupRotations() {
 		dk.RotationSequence.NewAction(dk.TankRA_Hps)
 	} else if dk.Rotation.OptimizationSetting == proto.TankDeathknight_Rotation_Tps {
 		dk.RotationSequence.NewAction(dk.TankRA_Tps)
-	} else if dk.Rotation.OptimizationSetting == proto.TankDeathknight_Rotation_Dps {
-		dk.RotationSequence.NewAction(dk.TankRA_Hps)
 	}
 
 	if dk.Rotation.BloodSpell == proto.TankDeathknight_Rotation_BloodStrike {
@@ -96,6 +102,12 @@ func (dk *TankDeathknight) SetupRotations() {
 		} else {
 			dk.BloodSpell = dk.BloodStrike
 		}
+	}
+
+	if dk.Talents.Annihilation == 3 {
+		dk.FuSpell = dk.Obliterate
+	} else {
+		dk.FuSpell = dk.DeathStrike
 	}
 }
 

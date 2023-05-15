@@ -7,11 +7,14 @@ import {
 	PresetTarget,
 } from '../proto/common.js';
 import {
+	GlyphID,
 	IconData,
 	UIDatabase,
 	UIEnchant as Enchant,
 	UIGem as Gem,
 	UIItem as Item,
+	UINPC as Npc,
+	UIZone as Zone,
 } from '../proto/ui.js';
 
 import {
@@ -59,10 +62,10 @@ export class Database {
 	}
 
 	// Checks if any items in the equipment are missing from the current DB. If so, loads the leftover DB.
-	static async loadLeftoversIfNecessary(equipment: EquipmentSpec): Promise<void> {
+	static async loadLeftoversIfNecessary(equipment: EquipmentSpec): Promise<Database> {
 		const db = await Database.get();
 		if (db.loadedLeftovers) {
-			return;
+			return db;
 		}
 
 		const shouldLoadLeftovers = equipment.items.some(item => item.id != 0 && !db.items[item.id]);
@@ -71,20 +74,22 @@ export class Database {
 			db.loadProto(leftoverDb);
 			db.loadedLeftovers = true;
 		}
+		return db;
 	}
 
 	private readonly items: Record<number, Item> = {};
 	private readonly enchantsBySlot: Partial<Record<ItemSlot, Enchant[]>> = {};
 	private readonly gems: Record<number, Gem> = {};
+	private readonly npcs: Record<number, Npc> = {};
+	private readonly zones: Record<number, Zone> = {};
 	private readonly presetEncounters: Record<string, PresetEncounter> = {};
 	private readonly presetTargets: Record<string, PresetTarget> = {};
-	private readonly itemIcons: Record<number, Promise<IconData>>;
-	private readonly spellIcons: Record<number, Promise<IconData>>;
+	private readonly itemIcons: Record<number, Promise<IconData>> = {};
+	private readonly spellIcons: Record<number, Promise<IconData>> = {};
+	private readonly glyphIds: Array<GlyphID> = [];
 	private loadedLeftovers: boolean = false;
 
 	private constructor(db: UIDatabase) {
-		this.itemIcons = {};
-		this.spellIcons = {};
 		this.loadProto(db);
 	}
 
@@ -102,27 +107,32 @@ export class Database {
 		});
 		db.gems.forEach(gem => this.gems[gem.id] = gem);
 
+		db.npcs.forEach(npc => this.npcs[npc.id] = npc);
+		db.zones.forEach(zone => this.zones[zone.id] = zone);
 		db.encounters.forEach(encounter => this.presetEncounters[encounter.path] = encounter);
 		db.encounters.map(e => e.targets).flat().forEach(target => this.presetTargets[target.path] = target);
 
-		db.items.forEach(item => this.itemIcons[item.id] = new Promise((resolve, _) => resolve(IconData.create({
+		db.items.forEach(item => this.itemIcons[item.id] = Promise.resolve(IconData.create({
 			id: item.id,
 			name: item.name,
 			icon: item.icon,
-		}))));
-		db.gems.forEach(gem => this.itemIcons[gem.id] = new Promise((resolve, _) => resolve(IconData.create({
+		})));
+		db.gems.forEach(gem => this.itemIcons[gem.id] = Promise.resolve(IconData.create({
 			id: gem.id,
 			name: gem.name,
 			icon: gem.icon,
-		}))));
-		db.itemIcons.forEach(data => this.itemIcons[data.id] = new Promise((resolve, _) => resolve(data)));
-		db.spellIcons.forEach(data => this.spellIcons[data.id] = new Promise((resolve, _) => resolve(data)));
+		})));
+		db.itemIcons.forEach(data => this.itemIcons[data.id] = Promise.resolve(data));
+		db.spellIcons.forEach(data => this.spellIcons[data.id] = Promise.resolve(data));
+		db.glyphIds.forEach(id => this.glyphIds.push(id));
+	}
+
+	getAllItems(): Array<Item> {
+		return Object.values(this.items);
 	}
 
 	getItems(slot: ItemSlot): Array<Item> {
-		let items = Object.values(this.items);
-		items = items.filter(item => getEligibleItemSlots(item).includes(slot));
-		return items;
+		return this.getAllItems().filter(item => getEligibleItemSlots(item).includes(slot));
 	}
 
 	getEnchants(slot: ItemSlot): Array<Enchant> {
@@ -135,6 +145,13 @@ export class Database {
 			gems = gems.filter(gem => gemEligibleForSocket(gem, socketColor));
 		}
 		return gems;
+	}
+
+	getNpc(npcId: number): Npc|null {
+		return this.npcs[npcId] || null;
+	}
+	getZone(zoneId: number): Zone|null {
+		return this.zones[zoneId] || null;
 	}
 
 	getMatchingGems(socketColor: GemColor): Array<Gem> {
@@ -183,6 +200,18 @@ export class Database {
 		});
 
 		return new Gear(gearMap);
+	}
+
+	enchantSpellIdToEffectId(enchantSpellId: number): number {
+		const enchant = Object.values(this.enchantsBySlot).flat().find(enchant => enchant.spellId == enchantSpellId);
+		return enchant ? enchant.effectId : 0;
+	}
+
+	glyphItemToSpellId(itemId: number): number {
+		return this.glyphIds.find(gid => gid.itemId == itemId)?.spellId || 0;
+	}
+	glyphSpellToItemId(spellId: number): number {
+		return this.glyphIds.find(gid => gid.spellId == spellId)?.itemId || 0;
 	}
 
 	getPresetEncounter(path: string): PresetEncounter | null {

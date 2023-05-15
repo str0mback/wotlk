@@ -11,6 +11,7 @@ import (
 func (dk *Deathknight) registerHornOfWinterSpell() {
 	actionID := core.ActionID{SpellID: 57623}
 	duration := time.Minute * time.Duration((2.0 + core.TernaryFloat64(dk.HasMinorGlyph(proto.DeathknightMinorGlyph_GlyphOfHornOfWinter), 1.0, 0.0)))
+	rpMetrics := dk.NewRunicPowerMetrics(actionID)
 
 	bonusStats := stats.Stats{stats.Strength: 155.0, stats.Agility: 155.0}
 	negativeStats := bonusStats.Multiply(-1)
@@ -37,30 +38,26 @@ func (dk *Deathknight) registerHornOfWinterSpell() {
 		},
 	})
 
-	dk.HornOfWinter = dk.RegisterSpell(nil, core.SpellConfig{
+	dk.HornOfWinter = dk.RegisterSpell(core.SpellConfig{
 		ActionID: actionID,
 		Flags:    core.SpellFlagNoOnCastComplete,
 		Cast: core.CastConfig{
 			DefaultCast: core.Cast{
 				GCD: core.GCDDefault,
 			},
-			ModifyCast: func(sim *core.Simulation, spell *core.Spell, cast *core.Cast) {
-				cast.GCD = dk.GetModifiedGCD()
-			},
 			CD: core.Cooldown{
 				Timer:    dk.NewTimer(),
 				Duration: 20 * time.Second,
 			},
+			IgnoreHaste: true,
 		},
 		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
 			if dk.Inputs.RefreshHornOfWinter {
 				dk.HornOfWinterAura.Activate(sim)
 			}
-			dk.AddRunicPower(sim, 10.0, dk.HornOfWinter.RunicPowerMetrics())
+			dk.AddRunicPower(sim, 10, rpMetrics)
 		},
-	}, func(sim *core.Simulation) bool {
-		return dk.HornOfWinter.IsReady(sim)
-	}, nil)
+	})
 }
 
 func (dk *Deathknight) ShouldHornOfWinter(sim *core.Simulation) bool {

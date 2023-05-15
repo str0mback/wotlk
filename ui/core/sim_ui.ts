@@ -14,12 +14,13 @@ import { EventID, TypedEvent } from './typed_event.js';
 
 import { Tooltip } from 'bootstrap';
 import { SimTab } from './components/sim_tab.js';
-
-declare var tippy: any;
-declare var pako: any;
+import { BaseModal } from './components/base_modal.js';
 
 const URLMAXLEN = 2048;
 const noticeText = '';
+const globalKnownIssues = [
+	'Wowhead tooltips may not correctly display Tier 8 set bonuses when combining 10 and 25 player tier pieces.'
+]
 
 // Config for displaying a warning to the user whenever a condition is met.
 export interface SimWarning {
@@ -29,6 +30,8 @@ export interface SimWarning {
 
 export interface SimUIConfig {
 	// Additional css class to add to the root element.
+	cssClass: string;
+	// Scheme used for themeing on a per-class Basis or for other sims
 	cssScheme: string;
 	// The spec, if an individual sim, or null if the raid sim.
 	spec: Spec | null,
@@ -39,6 +42,7 @@ export interface SimUIConfig {
 // Shared UI for all individual sims and the raid sim.
 export abstract class SimUI extends Component {
 	readonly sim: Sim;
+	readonly cssClass: string;
 	readonly cssScheme: string;
 	readonly isWithinRaidSim: boolean;
 
@@ -54,11 +58,10 @@ export abstract class SimUI extends Component {
 	readonly iterationsPicker: HTMLElement;
 	readonly simTabContentsContainer: HTMLElement;
 
-	private warningsTippy: any;
-
 	constructor(parentElem: HTMLElement, sim: Sim, config: SimUIConfig) {
 		super(parentElem, 'sim-ui');
 		this.sim = sim;
+		this.cssClass = config.cssClass;
 		this.cssScheme = config.cssScheme;
 		this.isWithinRaidSim = this.rootElem.closest('.within-raid-sim') != null;
 		this.rootElem.innerHTML = simHTML;
@@ -67,6 +70,8 @@ export abstract class SimUI extends Component {
 		this.simMain = document.createElement('main');
 		this.simMain.classList.add('sim-main', 'tab-content');
 		this.simContentContainer.appendChild(this.simMain);
+
+		this.rootElem.classList.add(this.cssClass);
 
 		if (!this.isWithinRaidSim) {
 			this.rootElem.classList.add('not-within-raid-sim');
@@ -105,6 +110,25 @@ export abstract class SimUI extends Component {
 		updateShowHealingMetrics();
 		this.sim.showHealingMetricsChangeEmitter.on(updateShowHealingMetrics);
 
+		const updateShowEpRatios = () => {
+			// Threat metrics *always* shows multiple columns, so
+			// always show ratios when they are shown
+			if (this.sim.getShowThreatMetrics()) {
+				this.rootElem.classList.remove('hide-ep-ratios');
+			// This case doesn't currently happen, but who knows
+			// what the future holds...
+			} else if (this.sim.getShowDamageMetrics() && this.sim.getShowHealingMetrics()) {
+				this.rootElem.classList.remove('hide-ep-ratios');
+			} else {
+				this.rootElem.classList.add('hide-ep-ratios');
+			}
+		};
+
+		updateShowEpRatios();
+		this.sim.showDamageMetricsChangeEmitter.on(updateShowEpRatios);
+		this.sim.showHealingMetricsChangeEmitter.on(updateShowEpRatios);
+		this.sim.showThreatMetricsChangeEmitter.on(updateShowEpRatios);
+
 		const updateShowExperimental = () => {
 			if (this.sim.getShowExperimental())
 				this.rootElem.classList.remove('hide-experimental');
@@ -114,7 +138,6 @@ export abstract class SimUI extends Component {
 		updateShowExperimental();
 		this.sim.showExperimentalChangeEmitter.on(updateShowExperimental);
 
-		this.addNoticeBanner();
 		this.addKnownIssues(config);
 
 		const titleElem = this.rootElem.querySelector('.sim-title') as HTMLElement;
@@ -152,7 +175,7 @@ export abstract class SimUI extends Component {
 
 	addAction(name: string, cssClass: string, actFn: () => void) {
 		const button = document.createElement('button');
-		button.classList.add('btn', `btn-${this.cssScheme}`, 'w-100', cssClass);
+		button.classList.add('btn', 'btn-primary', 'w-100', cssClass);
 		button.textContent = name;
 		button.addEventListener('click', actFn);
 		this.simActionsContainer.appendChild(button);
@@ -179,15 +202,7 @@ export abstract class SimUI extends Component {
 	}
 
 	addWarning(warning: SimWarning) {
-		this.simHeader.addWarning(warning);
-	}
-
-	private addNoticeBanner() {
-		const noticesElem = document.querySelector('.notices-banner') as HTMLElement;
-
-		if (!noticeText) {
-			noticesElem.remove();
-		}
+		this.resultsViewer.addWarning(warning);
 	}
 
 	private addKnownIssues(config: SimUIConfig) {
@@ -205,6 +220,7 @@ export abstract class SimUI extends Component {
 		if (config.knownIssues && config.knownIssues.length) {
 			config.knownIssues.forEach(issue => this.simHeader.addKnownIssue(issue));
 		}
+		globalKnownIssues.forEach(issue => this.simHeader.addKnownIssue(issue));
 	}
 
 	// Returns a key suitable for the browser's localStorage feature.
@@ -264,9 +280,21 @@ export abstract class SimUI extends Component {
 						const base_url = 'https://github.com/wowsims/wotlk/issues/new?assignees=&labels=&title=Crash%20Report%20'
 						const base = `${base_url}${hash}&body=`;
 						const maxBodyLength = URLMAXLEN - base.length;
-						let issueBody = encodeURIComponent(`Link:\n${link}\n\nRNG Seed: ${rngSeed}\n\n${errorStr}`)
-						while (issueBody.length > maxBodyLength) {
-							issueBody = issueBody.slice(0, issueBody.lastIndexOf('%')) // Avoid truncating in the middle of a URLencoded segment
+						let issueBody = encodeURIComponent(`Link:\n${link}\n\nRNG Seed: ${rngSeed}\n\n${errorStr}`);
+						if (link.includes('/raid/')) {
+							// Move the actual error before the link, as it will likely get truncated.
+							issueBody = encodeURIComponent(`${errorStr}\nRNG Seed: ${rngSeed}\nLink:\n${link}`);
+						}
+						let truncated = false;
+						while (issueBody.length > maxBodyLength - (truncated ? 3 : 0)) {
+							issueBody = issueBody.slice(0, issueBody.lastIndexOf('%')) // Avoid truncating in the middle of a URLencoded segment.
+							truncated = true;
+						}
+						if (truncated) {
+							issueBody += "...";
+							// The raid links are too large and will always cause truncation.
+							// Prompt the user to add more information to the issue.
+							new CrashModal(this.rootElem, link);
 						}
 						window.open(base + issueBody, '_blank');
 					}
@@ -275,7 +303,6 @@ export abstract class SimUI extends Component {
 				alert('Failed to file report... try again another time:' + fetchErr);
 			});
 		}
-		return;
 	}
 
 	hashCode(str: string): number {
@@ -292,10 +319,24 @@ export abstract class SimUI extends Component {
 	abstract toLink(): string;
 }
 
+class CrashModal extends BaseModal {
+	constructor(parent: HTMLElement, link: string) {
+		super(parent, 'crash', {title: 'Extra Crash Information'});
+		this.body.innerHTML = `
+			<div class="sim-crash-report">
+				<h3 class="sim-crash-report-header">Please append the following complete link to the issue you just created. This will simplify debugging the issue.</h3>
+				<textarea class="sim-crash-report-text form-control"></textarea>
+			</div>
+		`;
+		let text = document.createTextNode(link);
+		this.body.querySelector('textarea')?.appendChild(text);
+	}
+}
+
 const simHTML = `
 <div class="sim-root">
 	<div class="sim-bg"></div>
-	<div class="notices-banner alert border-bottom mb-0 text-center">${noticeText}</div>
+	${noticeText ? `<div class="notices-banner alert border-bottom mb-0 text-center">${noticeText}</div>` : ''}
   <aside class="sim-sidebar">
     <div class="sim-title"></div>
 		<div class="sim-sidebar-content">

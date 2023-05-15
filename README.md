@@ -8,7 +8,18 @@ This project is licensed with MIT license. We request that anyone using this sof
 
 [Support our devs via Patreon.](https://www.patreon.com/wowsims)
 
-# Installation
+# Downloading Sim
+
+Links for latest Sim build:
+- [Windows Sim](https://github.com/wowsims/wotlk/releases/latest/download/wowsimwotlk-windows.exe.zip)
+- [MacOS Sim](https://github.com/wowsims/wotlk/releases/latest/download/wowsimwotlk-amd64-darwin.zip)
+- [Linux Sim](https://github.com/wowsims/wotlk/releases/latest/download/wowsimwotlk-amd64-linux.zip)
+
+Then unzip the downloaded file, then open the unzipped file to open the sim in your browser!
+
+Alternatively, you can choose from a specific relase on the [Releases](https://github.com/wowsims/wotlk/releases) page and click the suitable link under "Assets"
+# Local Dev Installation
+
 This project has dependencies on Go >=1.18, protobuf-compiler and the corresponding Go plugins, and node >= 14.0.
 
 ## Ubuntu
@@ -34,7 +45,7 @@ go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 
 # Install node
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.38.0/install.sh | bash
-nvm install 14.18.3
+nvm install 19.8.0
 
 # Install the npm package dependencies using node
 npm install
@@ -57,12 +68,12 @@ WOTLK_CMD="docker run --rm -it -p 8080:8080 -v $(pwd):/wotlk wowsims-wotlk"
 # ... do some coding on the sim ...
 
 # Run tests
-$WOTLK_CMD make test
+$(echo $WOTLK_CMD) make test
 
 # ... do some coding on the UI ...
 
 # Host a local site
-$WOTLK_CMD make host
+$(echo $WOTLK_CMD) make host
 ```
 
 ## Windows

@@ -5,16 +5,17 @@ import { EventID, TypedEvent } from './typed_event';
 
 import { CharacterStats, StatMods } from './components/character_stats';
 import { ContentBlock } from './components/content_block';
-import { DetailedResults } from './components/detailed_results';
+import { EmbeddedDetailedResults } from './components/detailed_results';
 import { EncounterPickerConfig } from './components/encounter_picker';
 import { EnumPicker } from './components/enum_picker';
-import { GearPicker } from './components/gear_picker';
 import { IconEnumPicker } from './components/icon_enum_picker';
 import { LogRunner } from './components/log_runner';
 import { addRaidSimAction, RaidSimResultsManager } from './components/raid_sim_action';
 import { SavedDataConfig, SavedDataManager } from './components/saved_data_manager';
 import { addStatWeightsAction } from './components/stat_weights_action';
 
+import { BulkTab } from './components/individual_sim_ui/bulk_tab';
+import { GearTab } from './components/individual_sim_ui/gear_tab';
 import { SettingsTab } from './components/individual_sim_ui/settings_tab';
 
 import {
@@ -34,10 +35,9 @@ import {
 	RaidBuffs,
 	Spec,
 	Stat,
-	UnitStats,
 } from './proto/common';
 
-import { IndividualSimSettings, SavedGearSet, SavedTalents } from './proto/ui';
+import { IndividualSimSettings, SavedTalents } from './proto/ui';
 import { StatWeightsResult } from './proto/api';
 
 import { Gear } from './proto_utils/gear';
@@ -173,15 +173,21 @@ export abstract class IndividualSimUI<SpecType extends Spec> extends SimUI {
 
 	prevEpIterations: number;
 	prevEpSimResult: StatWeightsResult | null;
+	dpsRefStat?: Stat;
+	healRefStat?: Stat;
+	tankRefStat?: Stat;
+
+	readonly bt: BulkTab;
 
 	constructor(parentElem: HTMLElement, player: Player<SpecType>, config: IndividualSimUIConfig<SpecType>) {
 		super(parentElem, player.sim, {
+			cssClass: config.cssClass,
 			cssScheme: config.cssScheme,
 			spec: player.spec,
 			knownIssues: config.knownIssues,
 			launchStatus: simLaunchStatuses[player.spec],
 		});
-		this.rootElem.classList.add('individual-sim-ui', config.cssClass);
+		this.rootElem.classList.add('individual-sim-ui');
 		this.player = player;
 		this.individualConfig = config;
 		this.raidSimResultsManager = null;
@@ -267,6 +273,7 @@ export abstract class IndividualSimUI<SpecType extends Spec> extends SimUI {
 
 		this.addSidebarComponents();
 		this.addGearTab();
+		this.bt = this.addBulkTab();
 		this.addSettingsTab();
 		this.addTalentsTab();
 
@@ -340,65 +347,18 @@ export abstract class IndividualSimUI<SpecType extends Spec> extends SimUI {
 	}
 
 	private addGearTab() {
-		this.addTab('Gear', 'gear-tab', `
-			<div class="gear-tab-columns">
-				<div class="left-gear-panel">
-					<div class="gear-picker"></div>
-				</div>
-				<div class="right-gear-panel">
-					<div class="saved-gear-manager"></div>
-				</div>
-			</div>
-		`);
-
-		const gearPicker = new GearPicker(this.rootElem.getElementsByClassName('gear-picker')[0] as HTMLElement, this, this.player);
-
-		const savedGearManager = new SavedDataManager<Player<any>, SavedGearSet>(
-			this.rootElem.getElementsByClassName('saved-gear-manager')[0] as HTMLElement, this, this.player, {
-				header: {title: "Gear Sets"},
-				label: 'Gear Set',
-				storageKey: this.getSavedGearStorageKey(),
-				getData: (player: Player<any>) => {
-					return SavedGearSet.create({
-						gear: player.getGear().asSpec(),
-						bonusStatsStats: player.getBonusStats().toProto(),
-					});
-				},
-				setData: (eventID: EventID, player: Player<any>, newSavedGear: SavedGearSet) => {
-					TypedEvent.freezeAllAndDo(() => {
-						player.setGear(eventID, this.sim.db.lookupEquipmentSpec(newSavedGear.gear || EquipmentSpec.create()));
-						if (newSavedGear.bonusStats && newSavedGear.bonusStats.some(s => s != 0)) {
-							player.setBonusStats(eventID, new Stats(newSavedGear.bonusStats));
-						} else {
-							player.setBonusStats(eventID, Stats.fromProto(newSavedGear.bonusStatsStats || UnitStats.create()));
-						}
-					});
-				},
-				changeEmitters: [this.player.changeEmitter],
-				equals: (a: SavedGearSet, b: SavedGearSet) => SavedGearSet.equals(a, b),
-				toJson: (a: SavedGearSet) => SavedGearSet.toJson(a),
-				fromJson: (obj: any) => SavedGearSet.fromJson(obj),
-			}
-		);
-
-		this.sim.waitForInit().then(() => {
-			savedGearManager.loadUserData();
-			this.individualConfig.presets.gear.forEach(presetGear => {
-				savedGearManager.addSavedData({
-					name: presetGear.name,
-					tooltip: presetGear.tooltip,
-					isPreset: true,
-					data: SavedGearSet.create({
-						// Convert to gear and back so order is always the same.
-						gear: this.sim.db.lookupEquipmentSpec(presetGear.gear).asSpec(),
-						bonusStatsStats: new Stats().toProto(),
-					}),
-					enableWhen: presetGear.enableWhen,
-				});
-			});
-		});
+		let gearTab = new GearTab(this.simTabContentsContainer, this);
+		gearTab.rootElem.classList.add('active', 'show');
 	}
 
+	private addBulkTab(): BulkTab {
+		let bulkTab = new BulkTab(this.simTabContentsContainer, this);
+		bulkTab.navLink.hidden = !this.sim.getShowExperimental()
+		this.sim.showExperimentalChangeEmitter.on(() => {
+			bulkTab.navLink.hidden = !this.sim.getShowExperimental();
+		});
+		return bulkTab;
+	}
 
 	private addSettingsTab() {
 		new SettingsTab(this.simTabContentsContainer, this);
@@ -494,7 +454,7 @@ export abstract class IndividualSimUI<SpecType extends Spec> extends SimUI {
 			</div>
 		`);
 
-		const detailedResults = new DetailedResults(this.rootElem.getElementsByClassName('detailed-results')[0] as HTMLElement, this, this.raidSimResultsManager!);
+		const detailedResults = new EmbeddedDetailedResults(this.rootElem.getElementsByClassName('detailed-results')[0] as HTMLElement, this, this.raidSimResultsManager!);
 	}
 
 	private addLogTab() {
@@ -507,14 +467,16 @@ export abstract class IndividualSimUI<SpecType extends Spec> extends SimUI {
 	}
 
 	private addTopbarComponents() {
-		this.simHeader.addImportLink('JSON', parent => new Importers.IndividualJsonImporter(parent, this), true);
-		this.simHeader.addImportLink('80U', parent => new Importers.Individual80UImporter(parent, this), true);
-		this.simHeader.addImportLink('Addon', parent => new Importers.IndividualAddonImporter(parent, this), true);
+		this.simHeader.addImportLink('JSON', _parent => new Importers.IndividualJsonImporter(this.rootElem, this), true);
+		this.simHeader.addImportLink('80U', _parent => new Importers.Individual80UImporter(this.rootElem, this), true);
+		this.simHeader.addImportLink('WoWHead', _parent => new Importers.IndividualWowheadGearPlannerImporter(this.rootElem, this), false);
+		this.simHeader.addImportLink('Addon', _parent => new Importers.IndividualAddonImporter(this.rootElem, this), true);
 
-		this.simHeader.addExportLink('Link', parent => new Exporters.IndividualLinkExporter(parent, this), false);
-		this.simHeader.addExportLink('JSON', parent => new Exporters.IndividualJsonExporter(parent, this), true);
-		this.simHeader.addExportLink('80U EP', parent => new Exporters.Individual80UEPExporter(parent, this), false);
-		this.simHeader.addExportLink('Pawn EP', parent => new Exporters.IndividualPawnEPExporter(parent, this), false);
+		this.simHeader.addExportLink('Link', _parent => new Exporters.IndividualLinkExporter(this.rootElem, this), false);
+		this.simHeader.addExportLink('JSON', _parent => new Exporters.IndividualJsonExporter(this.rootElem, this), true);
+		this.simHeader.addExportLink('WoWHead', _parent => new Exporters.IndividualWowheadGearPlannerExporter(this.rootElem, this), false);
+		this.simHeader.addExportLink('80U EP', _parent => new Exporters.Individual80UEPExporter(this.rootElem, this), false);
+		this.simHeader.addExportLink('Pawn EP', _parent => new Exporters.IndividualPawnEPExporter(this.rootElem, this), false);
 	}
 
 	applyDefaults(eventID: EventID) {
@@ -539,6 +501,8 @@ export abstract class IndividualSimUI<SpecType extends Spec> extends SimUI {
 			this.player.getParty()!.setBuffs(eventID, this.individualConfig.defaults.partyBuffs);
 			this.player.getRaid()!.setBuffs(eventID, this.individualConfig.defaults.raidBuffs);
 			this.player.setEpWeights(eventID, this.individualConfig.defaults.epWeights);
+			const defaultRatios = this.player.getDefaultEpRatios(tankSpec, healingSpec)
+			this.player.setEpRatios(eventID, defaultRatios);
 			this.player.setProfession1(eventID, this.individualConfig.defaults.other?.profession1 || Profession.Engineering);
 			this.player.setProfession2(eventID, this.individualConfig.defaults.other?.profession2 || Profession.Jewelcrafting);
 			this.player.setDistanceFromTarget(eventID, this.individualConfig.defaults.other?.distanceFromTarget || 0);
@@ -593,6 +557,7 @@ export abstract class IndividualSimUI<SpecType extends Spec> extends SimUI {
 			partyBuffs: this.player.getParty()?.getBuffs() || PartyBuffs.create(),
 			encounter: this.sim.encounter.toProto(),
 			epWeightsStats: this.player.getEpWeights().toProto(),
+			epRatios: this.player.getEpRatios(),
 			targetDummies: this.sim.raid.getTargetDummies(),
 		});
 	}
@@ -625,6 +590,17 @@ export abstract class IndividualSimUI<SpecType extends Spec> extends SimUI {
 			} else {
 				this.player.setEpWeights(eventID, this.individualConfig.defaults.epWeights);
 			}
+
+			const tankSpec = isTankSpec(this.player.spec);
+			const healingSpec = isHealingSpec(this.player.spec);
+			const defaultRatios = this.player.getDefaultEpRatios(tankSpec, healingSpec);
+			if (settings.epRatios) {
+				const missingRatios = new Array<number>(defaultRatios.length - settings.epRatios.length).fill(0);
+				this.player.setEpRatios(eventID, settings.epRatios.concat(missingRatios));
+			} else {
+				this.player.setEpRatios(eventID, defaultRatios);
+			}
+
 			this.sim.raid.setBuffs(eventID, settings.raidBuffs || RaidBuffs.create());
 			this.sim.raid.setDebuffs(eventID, settings.debuffs || Debuffs.create());
 			this.sim.raid.setTanks(eventID, settings.tanks || []);

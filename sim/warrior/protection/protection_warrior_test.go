@@ -97,14 +97,24 @@ var PlayerOptionsBasic = &proto.Player_ProtectionWarrior{
 
 var warriorRotation = &proto.ProtectionWarrior_Rotation{
 	HsRageThreshold: 30,
+	CustomRotation: &proto.CustomRotation{
+		Spells: []*proto.CustomSpell{
+			&proto.CustomSpell{Spell: int32(proto.ProtectionWarrior_Rotation_ShieldSlam)},
+			&proto.CustomSpell{Spell: int32(proto.ProtectionWarrior_Rotation_Revenge)},
+			&proto.CustomSpell{Spell: int32(proto.ProtectionWarrior_Rotation_Shout)},
+			&proto.CustomSpell{Spell: int32(proto.ProtectionWarrior_Rotation_ThunderClap)},
+			&proto.CustomSpell{Spell: int32(proto.ProtectionWarrior_Rotation_DemoralizingShout)},
+			&proto.CustomSpell{Spell: int32(proto.ProtectionWarrior_Rotation_MortalStrike)},
+			&proto.CustomSpell{Spell: int32(proto.ProtectionWarrior_Rotation_Devastate)},
+			&proto.CustomSpell{Spell: int32(proto.ProtectionWarrior_Rotation_SunderArmor)},
+			&proto.CustomSpell{Spell: int32(proto.ProtectionWarrior_Rotation_ConcussionBlow)},
+			&proto.CustomSpell{Spell: int32(proto.ProtectionWarrior_Rotation_Shockwave)},
+		},
+	},
 }
 
 var warriorOptions = &proto.ProtectionWarrior_Options{
-	Shout:                proto.WarriorShout_WarriorShoutCommanding,
-	PrecastShout:         false,
-	PrecastShoutT2:       false,
-	PrecastShoutSapphire: false,
-
+	Shout:        proto.WarriorShout_WarriorShoutCommanding,
 	StartingRage: 0,
 }
 

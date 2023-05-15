@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/wowsims/wotlk/sim/core/proto"
+	"golang.org/x/exp/slices"
 )
 
 type EnvironmentState int
@@ -17,6 +18,12 @@ const (
 
 // Callback for doing something after finalization.
 type PostFinalizeEffect func()
+
+// Callback for doing something on prepull.
+type PrepullAction struct {
+	DoAt   time.Duration
+	Action func(*Simulation)
+}
 
 type Environment struct {
 	State EnvironmentState
@@ -34,6 +41,8 @@ type Environment struct {
 
 	// Effects to invoke when the Env is finalized.
 	postFinalizeEffects []PostFinalizeEffect
+
+	prepullActions []PrepullAction
 }
 
 func NewEnvironment(raidProto *proto.Raid, encounterProto *proto.Encounter) (*Environment, *proto.RaidStats) {
@@ -65,12 +74,14 @@ func (env *Environment) construct(raidProto *proto.Raid, encounterProto *proto.E
 	}
 
 	for _, unit := range env.Raid.AllUnits {
-		unit.CurrentTarget = &env.Encounter.Targets[0].Unit
+		unit.CurrentTarget = env.Encounter.TargetUnits[0]
 	}
 
 	// Apply extra debuffs from raid.
-	if raidProto.Debuffs != nil && len(env.Encounter.Targets) > 0 {
-		applyDebuffEffects(&env.Encounter.Targets[0].Unit, raidProto.Debuffs, raidProto)
+	if raidProto.Debuffs != nil && len(env.Encounter.TargetUnits) > 0 {
+		for targetIdx, targetUnit := range env.Encounter.TargetUnits {
+			applyDebuffEffects(targetUnit, targetIdx, raidProto.Debuffs, raidProto)
+		}
 	}
 
 	// Assign target or target using Tanks field.
@@ -121,19 +132,31 @@ func (env *Environment) initialize(raidProto *proto.Raid, encounterProto *proto.
 }
 
 // The finalization phase.
-func (env *Environment) finalize(raidProto *proto.Raid, encounterProto *proto.Encounter, raidStats *proto.RaidStats) {
+func (env *Environment) finalize(raidProto *proto.Raid, _ *proto.Encounter, raidStats *proto.RaidStats) {
 	for _, target := range env.Encounter.Targets {
 		target.finalize()
 	}
 
-	for partyIdx, party := range env.Raid.Parties {
+	for _, party := range env.Raid.Parties {
 		for _, player := range party.Players {
 			character := player.GetCharacter()
-			character.Finalize(raidStats.Parties[partyIdx].Players[character.PartyIndex])
-
+			character.Finalize()
 			for _, petAgent := range character.Pets {
 				petAgent.GetPet().Finalize()
 			}
+		}
+	}
+
+	for partyIdx, party := range env.Raid.Parties {
+		partyProto := raidProto.Parties[partyIdx]
+		for playerIdx, player := range party.Players {
+			if playerIdx >= len(partyProto.Players) {
+				// This happens for target dummies.
+				continue
+			}
+			playerProto := partyProto.Players[playerIdx]
+			char := player.GetCharacter()
+			char.Rotation = char.newAPLRotation(playerProto.Rotation)
 		}
 	}
 
@@ -142,7 +165,18 @@ func (env *Environment) finalize(raidProto *proto.Raid, encounterProto *proto.En
 	}
 	env.postFinalizeEffects = nil
 
+	slices.SortStableFunc(env.prepullActions, func(a1, a2 PrepullAction) bool {
+		return a1.DoAt < a2.DoAt
+	})
+
 	env.setupAttackTables()
+
+	for partyIdx, party := range env.Raid.Parties {
+		for _, player := range party.Players {
+			character := player.GetCharacter()
+			character.FillPlayerStats(raidStats.Parties[partyIdx].Players[character.PartyIndex])
+		}
+	}
 
 	env.State = Finalized
 }
@@ -163,6 +197,19 @@ func (env *Environment) setupAttackTables() {
 
 func (env *Environment) IsFinalized() bool {
 	return env.State >= Finalized
+}
+
+func (env *Environment) reset(sim *Simulation) {
+	// Reset primary targets damage taken for tracking health fights.
+	env.Encounter.DamageTaken = 0
+
+	// Targets need to be reset before the raid, so that players can check for
+	// the presence of permanent target auras in their Reset handlers.
+	for _, target := range env.Encounter.Targets {
+		target.Reset(sim)
+	}
+
+	env.Raid.reset(sim)
 }
 
 // The maximum possible duration for any iteration.
@@ -195,4 +242,21 @@ func (env *Environment) RegisterPostFinalizeEffect(postFinalizeEffect PostFinali
 	}
 
 	env.postFinalizeEffects = append(env.postFinalizeEffects, postFinalizeEffect)
+}
+
+// Registers a callback to this Unit which will be invoked on the prepull at the specified
+// negative time.
+func (unit *Unit) RegisterPrepullAction(doAt time.Duration, action func(*Simulation)) {
+	env := unit.Env
+	if env.IsFinalized() {
+		panic("Prepull actions may not be added once finalized!")
+	}
+	if doAt > 0 {
+		panic("Prepull DoAt must not be positive!")
+	}
+
+	env.prepullActions = append(env.prepullActions, PrepullAction{
+		DoAt:   doAt,
+		Action: action,
+	})
 }

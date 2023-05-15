@@ -108,7 +108,7 @@ export class MageSimUI extends IndividualSimUI<Spec.SpecMage> {
 					divineSpirit: true,
 					swiftRetribution: true,
 					sanctifiedRetribution: true,
-					demonicPact: 2500,
+					demonicPact: 500,
 					moonkinAura: TristateEffect.TristateEffectImproved,
 					arcaneBrilliance: true,
 				}),
@@ -170,9 +170,13 @@ export class MageSimUI extends IndividualSimUI<Spec.SpecMage> {
 				gear: [
 					Presets.ARCANE_PRERAID_PRESET,
 					Presets.ARCANE_P1_PRESET,
+					Presets.ARCANE_P2_PRESET,
 					Presets.FIRE_PRERAID_PRESET,
 					Presets.FIRE_P1_PRESET,
+					Presets.FIRE_P2_PRESET,
 					Presets.FROST_P1_PRESET,
+					Presets.FROST_P2_PRESET,
+					Presets.FFB_P2_PRESET,
 				],
 			},
 		});

@@ -38,19 +38,32 @@ var ItemSetFrostfireGarb = core.NewItemSet(core.ItemSet{
 
 // T8 Ulduar
 var ItemSetKirinTorGarb = core.NewItemSet(core.ItemSet{
-	Name: "Kirin Tor Garb",
+	Name:            "Kirin Tor Garb",
+	AlternativeName: "Kirin'dor Garb", // Wowhead spells this incorrectly
 	Bonuses: map[int32]core.ApplyEffect{
 		2: func(agent core.Agent) {
 			mage := agent.(MageAgent).GetMage()
-			procAura := mage.NewTemporaryStatsAura("Kirin Tor 2pc", core.ActionID{SpellID: 64867}, stats.Stats{stats.SpellPower: 350}, 15*time.Second)
+			procAura := mage.NewTemporaryStatsAura("Kirin Tor 2pc", core.ActionID{SpellID: 64868}, stats.Stats{stats.SpellPower: 350}, 15*time.Second)
+
+			// Handle ICD ourselves since we use a custom check.
+			icd := core.Cooldown{
+				Timer:    agent.GetCharacter().NewTimer(),
+				Duration: time.Second * 45,
+			}
+
 			core.MakeProcTriggerAura(&mage.Unit, core.ProcTrigger{
 				Name:       "Mage2pT8",
-				Callback:   core.CallbackOnSpellHitDealt,
+				Callback:   core.CallbackOnCastComplete,
 				ProcChance: 0.25,
-				ICD:        time.Second * 45,
-				SpellFlags: BarrageSpells,
-				Handler: func(sim *core.Simulation, _ *core.Spell, _ *core.SpellResult) {
-					procAura.Activate(sim)
+				Handler: func(sim *core.Simulation, spell *core.Spell, _ *core.SpellResult) {
+					if !icd.IsReady(sim) {
+						return
+					}
+
+					if spell == mage.ArcaneBlast || spell == mage.Fireball || spell == mage.FrostfireBolt || spell == mage.Frostbolt {
+						icd.Use(sim)
+						procAura.Activate(sim)
+					}
 				},
 			})
 		},

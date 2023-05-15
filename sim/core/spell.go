@@ -9,6 +9,7 @@ import (
 
 type ApplySpellResults func(sim *Simulation, target *Unit, spell *Spell)
 type ExpectedDamageCalculator func(sim *Simulation, target *Unit, spell *Spell, useSnapshot bool) *SpellResult
+type CanCastCondition func(sim *Simulation, target *Unit) bool
 
 type SpellConfig struct {
 	// See definition of Spell (below) for comments on these.
@@ -17,14 +18,17 @@ type SpellConfig struct {
 	ProcMask     ProcMask
 	Flags        SpellFlag
 	MissileSpeed float64
-	ResourceType stats.Stat
 	BaseCost     float64
+	MetricSplits int
 
 	ManaCost   ManaCostOptions
 	EnergyCost EnergyCostOptions
 	RageCost   RageCostOptions
+	RuneCost   RuneCostOptions
+	FocusCost  FocusCostOptions
 
-	Cast CastConfig
+	Cast               CastConfig
+	ExtraCastCondition CanCastCondition
 
 	BonusHitRating       float64
 	BonusCritRating      float64
@@ -45,6 +49,9 @@ type SpellConfig struct {
 
 	// Optional field. Calculates expected average damage.
 	ExpectedDamage ExpectedDamageCalculator
+
+	Dot DotConfig
+	Hot DotConfig
 }
 
 type Spell struct {
@@ -68,34 +75,20 @@ type Spell struct {
 	// Example: https://wow.tools/dbc/?dbc=spellmisc&build=3.4.0.44996
 	MissileSpeed float64
 
-	// Should be stats.Mana, stats.Energy, stats.Rage, or unset.
-	ResourceType      stats.Stat
-	ResourceMetrics   *ResourceMetrics
-	comboPointMetrics *ResourceMetrics
-	runicPowerMetrics *ResourceMetrics
-	bloodRuneMetrics  *ResourceMetrics
-	frostRuneMetrics  *ResourceMetrics
-	unholyRuneMetrics *ResourceMetrics
-	deathRuneMetrics  *ResourceMetrics
-	healthMetrics     []*ResourceMetrics
+	ResourceMetrics *ResourceMetrics
+	healthMetrics   []*ResourceMetrics
 
-	// Base cost. Many effects in the game which 'reduce mana cost by X%'
-	// are calculated using the base cost.
-	BaseCost float64
-
-	// Cost for the spell.
-	Cost SpellCost
-
-	// Default cast parameters with all static effects applied.
-	DefaultCast Cast
-
-	CD       Cooldown
-	SharedCD Cooldown
+	Cost               SpellCost // Cost for the spell.
+	DefaultCast        Cast      // Default cast parameters with all static effects applied.
+	CD                 Cooldown
+	SharedCD           Cooldown
+	ExtraCastCondition CanCastCondition
 
 	// Performs a cast of this spell.
 	castFn CastSuccessFunc
 
-	SpellMetrics []SpellMetrics
+	SpellMetrics      []SpellMetrics
+	splitSpellMetrics [][]SpellMetrics // Used to split metrics by some condition.
 
 	// Performs the actions of this spell.
 	ApplyEffects ApplySpellResults
@@ -133,6 +126,9 @@ type Spell struct {
 	// Note that bonus expertise and armor pen are static, so we don't bother resetting them.
 
 	resultCache SpellResult
+
+	dots   DotArray
+	aoeDot *Dot
 }
 
 func (unit *Unit) OnSpellRegistered(handler SpellRegisteredHandler) {
@@ -163,12 +159,11 @@ func (unit *Unit) RegisterSpell(config SpellConfig) *Spell {
 		ProcMask:     config.ProcMask,
 		Flags:        config.Flags,
 		MissileSpeed: config.MissileSpeed,
-		ResourceType: config.ResourceType,
-		BaseCost:     config.BaseCost,
 
-		DefaultCast: config.Cast.DefaultCast,
-		CD:          config.Cast.CD,
-		SharedCD:    config.Cast.SharedCD,
+		DefaultCast:        config.Cast.DefaultCast,
+		CD:                 config.Cast.CD,
+		SharedCD:           config.Cast.SharedCD,
+		ExtraCastCondition: config.ExtraCastCondition,
 
 		ApplyEffects: config.ApplyEffects,
 
@@ -187,6 +182,8 @@ func (unit *Unit) RegisterSpell(config SpellConfig) *Spell {
 
 		ThreatMultiplier: config.ThreatMultiplier,
 		FlatThreatBonus:  config.FlatThreatBonus,
+
+		splitSpellMetrics: make([][]SpellMetrics, MaxInt(1, config.MetricSplits)),
 	}
 
 	if (spell.DamageMultiplier != 0 || spell.ThreatMultiplier != 0) && spell.ProcMask == ProcMaskUnknown {
@@ -220,26 +217,14 @@ func (unit *Unit) RegisterSpell(config SpellConfig) *Spell {
 		spell.Cost = newEnergyCost(spell, config.EnergyCost)
 	} else if config.RageCost.Cost != 0 {
 		spell.Cost = newRageCost(spell, config.RageCost)
+	} else if config.RuneCost.BloodRuneCost != 0 || config.RuneCost.FrostRuneCost != 0 || config.RuneCost.UnholyRuneCost != 0 || config.RuneCost.RunicPowerCost != 0 || config.RuneCost.RunicPowerGain != 0 {
+		spell.Cost = newRuneCost(spell, config.RuneCost)
+	} else if config.FocusCost.Cost != 0 {
+		spell.Cost = newFocusCost(spell, config.FocusCost)
 	}
 
-	if spell.Cost == nil {
-		switch spell.ResourceType {
-		case stats.RunicPower:
-			spell.ResourceMetrics = spell.Unit.NewRunicPowerMetrics(spell.ActionID)
-		case stats.BloodRune:
-			spell.ResourceMetrics = spell.Unit.NewBloodRuneMetrics(spell.ActionID)
-		case stats.FrostRune:
-			spell.ResourceMetrics = spell.Unit.NewFrostRuneMetrics(spell.ActionID)
-		case stats.UnholyRune:
-			spell.ResourceMetrics = spell.Unit.NewUnholyRuneMetrics(spell.ActionID)
-		case stats.DeathRune:
-			spell.ResourceMetrics = spell.Unit.NewDeathRuneMetrics(spell.ActionID)
-		}
-	}
-
-	if spell.ResourceType == 0 && spell.DefaultCast.Cost != 0 {
-		panic("Cost set for spell " + spell.ActionID.String() + " but no resource type")
-	}
+	spell.createDots(config.Dot, false)
+	spell.createDots(config.Hot, true)
 
 	spell.castFn = spell.makeCastFunc(config.Cast, spell.applyEffects)
 
@@ -280,6 +265,28 @@ func (unit *Unit) GetOrRegisterSpell(config SpellConfig) *Spell {
 	}
 }
 
+func (spell *Spell) Dot(target *Unit) *Dot {
+	return spell.dots.Get(target)
+}
+func (spell *Spell) CurDot() *Dot {
+	return spell.dots.Get(spell.Unit.CurrentTarget)
+}
+func (spell *Spell) AOEDot() *Dot {
+	return spell.aoeDot
+}
+func (spell *Spell) Hot(target *Unit) *Dot {
+	return spell.dots.Get(target)
+}
+func (spell *Spell) CurHot() *Dot {
+	return spell.dots.Get(spell.Unit.CurrentTarget)
+}
+func (spell *Spell) AOEHot() *Dot {
+	return spell.aoeDot
+}
+func (spell *Spell) SelfHot() *Dot {
+	return spell.aoeDot
+}
+
 // Metrics for the current iteration
 func (spell *Spell) CurDamagePerCast() float64 {
 	if spell.SpellMetrics[0].Casts == 0 {
@@ -310,14 +317,20 @@ func (spell *Spell) finalize() {
 	spell.initialDamageMultiplierAdditive = spell.DamageMultiplierAdditive
 	spell.initialCritMultiplier = spell.CritMultiplier
 	spell.initialThreatMultiplier = spell.ThreatMultiplier
+
+	if len(spell.splitSpellMetrics) > 1 && spell.ActionID.Tag != 0 {
+		panic(spell.ActionID.String() + " has split metrics and a non-zero tag, can only have one!")
+	}
+	for i := range spell.splitSpellMetrics {
+		spell.splitSpellMetrics[i] = make([]SpellMetrics, len(spell.Unit.Env.AllUnits))
+	}
+	spell.SpellMetrics = spell.splitSpellMetrics[0]
 }
 
 func (spell *Spell) reset(_ *Simulation) {
-	if len(spell.SpellMetrics) != len(spell.Unit.Env.AllUnits) {
-		spell.SpellMetrics = make([]SpellMetrics, len(spell.Unit.Env.AllUnits))
-	} else {
-		for i := range spell.SpellMetrics {
-			spell.SpellMetrics[i] = SpellMetrics{}
+	for i := range spell.splitSpellMetrics {
+		for j := range spell.SpellMetrics {
+			spell.splitSpellMetrics[i][j] = SpellMetrics{}
 		}
 	}
 
@@ -333,52 +346,23 @@ func (spell *Spell) reset(_ *Simulation) {
 	spell.ThreatMultiplier = spell.initialThreatMultiplier
 }
 
+func (spell *Spell) SetMetricsSplit(splitIdx int32) {
+	spell.SpellMetrics = spell.splitSpellMetrics[splitIdx]
+	spell.ActionID.Tag = splitIdx
+}
+
 func (spell *Spell) doneIteration() {
-	if !spell.Flags.Matches(SpellFlagNoMetrics) {
-		spell.Unit.Metrics.addSpell(spell)
+	if spell.Flags.Matches(SpellFlagNoMetrics) {
+		return
 	}
-}
 
-func (spell *Spell) ComboPointMetrics() *ResourceMetrics {
-	if spell.comboPointMetrics == nil {
-		spell.comboPointMetrics = spell.Unit.NewComboPointMetrics(spell.ActionID)
+	if len(spell.splitSpellMetrics) == 1 {
+		spell.Unit.Metrics.addSpellMetrics(spell, spell.ActionID, spell.SpellMetrics)
+	} else {
+		for i, spellMetrics := range spell.splitSpellMetrics {
+			spell.Unit.Metrics.addSpellMetrics(spell, spell.ActionID.WithTag(int32(i)), spellMetrics)
+		}
 	}
-	return spell.comboPointMetrics
-}
-
-func (spell *Spell) RunicPowerMetrics() *ResourceMetrics {
-	if spell.runicPowerMetrics == nil {
-		spell.runicPowerMetrics = spell.Unit.NewRunicPowerMetrics(spell.ActionID)
-	}
-	return spell.runicPowerMetrics
-}
-
-func (spell *Spell) BloodRuneMetrics() *ResourceMetrics {
-	if spell.bloodRuneMetrics == nil {
-		spell.bloodRuneMetrics = spell.Unit.NewBloodRuneMetrics(spell.ActionID)
-	}
-	return spell.bloodRuneMetrics
-}
-
-func (spell *Spell) FrostRuneMetrics() *ResourceMetrics {
-	if spell.frostRuneMetrics == nil {
-		spell.frostRuneMetrics = spell.Unit.NewFrostRuneMetrics(spell.ActionID)
-	}
-	return spell.frostRuneMetrics
-}
-
-func (spell *Spell) UnholyRuneMetrics() *ResourceMetrics {
-	if spell.unholyRuneMetrics == nil {
-		spell.unholyRuneMetrics = spell.Unit.NewUnholyRuneMetrics(spell.ActionID)
-	}
-	return spell.unholyRuneMetrics
-}
-
-func (spell *Spell) DeathRuneMetrics() *ResourceMetrics {
-	if spell.deathRuneMetrics == nil {
-		spell.deathRuneMetrics = spell.Unit.NewDeathRuneMetrics(spell.ActionID)
-	}
-	return spell.deathRuneMetrics
 }
 
 func (spell *Spell) HealthMetrics(target *Unit) *ResourceMetrics {
@@ -406,6 +390,56 @@ func (spell *Spell) TimeToReady(sim *Simulation) time.Duration {
 	return MaxTimeToReady(spell.CD.Timer, spell.SharedCD.Timer, sim)
 }
 
+// Returns whether a call to Cast() would be successful, without actually
+// doing a cast.
+func (spell *Spell) CanCast(sim *Simulation, target *Unit) bool {
+	if spell == nil {
+		return false
+	}
+
+	if spell.ExtraCastCondition != nil && !spell.ExtraCastCondition(sim, target) {
+		if sim.Log != nil {
+			sim.Log("Cant cast because of extra condition")
+		}
+		return false
+	}
+
+	// While casting or channeling, no other action is possible
+	if spell.Unit.Hardcast.Expires > sim.CurrentTime {
+		if sim.Log != nil {
+			sim.Log("Cant cast because already casting/channeling")
+		}
+		return false
+	}
+
+	if spell.DefaultCast.GCD > 0 && !spell.Unit.GCD.IsReady(sim) {
+		if sim.Log != nil {
+			sim.Log("Cant cast because of GCD")
+		}
+		return false
+	}
+
+	if !BothTimersReady(spell.CD.Timer, spell.SharedCD.Timer, sim) {
+		if sim.Log != nil {
+			sim.Log("Cant cast because of CDs")
+		}
+		return false
+	}
+
+	if spell.Cost != nil {
+		// temp hack
+		spell.CurCast.Cost = spell.DefaultCast.Cost
+		if !spell.Cost.MeetsRequirement(spell) {
+			if sim.Log != nil {
+				sim.Log("Cant cast because of resource cost")
+			}
+			return false
+		}
+	}
+
+	return true
+}
+
 func (spell *Spell) Cast(sim *Simulation, target *Unit) bool {
 	if target == nil {
 		target = spell.Unit.CurrentTarget
@@ -430,7 +464,10 @@ func (spell *Spell) applyEffects(sim *Simulation, target *Unit) {
 	if target == nil {
 		target = spell.Unit.CurrentTarget
 	}
-	spell.SpellMetrics[target.UnitIndex].Casts++
+	// target can still be null in individual sims when the caster is the enemy target
+	if target != nil {
+		spell.SpellMetrics[target.UnitIndex].Casts++
+	}
 	spell.ApplyEffects(sim, target, spell)
 }
 
@@ -459,6 +496,18 @@ func (spell *Spell) ExpectedDamage(sim *Simulation, target *Unit) float64 {
 }
 func (spell *Spell) ExpectedDamageFromCurrentSnapshot(sim *Simulation, target *Unit) float64 {
 	return spell.expectedDamageHelper(sim, target, true)
+}
+
+// Time until either the cast is finished or GCD is ready again, whichever is longer
+func (spell *Spell) EffectiveCastTime() time.Duration {
+	// TODO: this is wrong for spells like shadowfury, that have a GCD of less than 1s
+	return MaxDuration(spell.Unit.SpellGCD(),
+		spell.Unit.ApplyCastSpeedForSpell(spell.DefaultCast.EffectiveTime(), spell))
+}
+
+// Time until the cast is finished (ignoring GCD)
+func (spell *Spell) CastTime() time.Duration {
+	return spell.Unit.ApplyCastSpeedForSpell(spell.DefaultCast.CastTime, spell)
 }
 
 // Handles computing the cost of spells and checking whether the Unit

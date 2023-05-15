@@ -7,6 +7,10 @@ import (
 )
 
 func (warrior *Warrior) registerBloodthirstSpell(cdTimer *core.Timer) {
+	if !warrior.Talents.Bloodthirst {
+		return
+	}
+
 	warrior.Bloodthirst = warrior.RegisterSpell(core.SpellConfig{
 		ActionID:    core.ActionID{SpellID: 23881},
 		SpellSchool: core.SpellSchoolPhysical,
@@ -42,17 +46,11 @@ func (warrior *Warrior) registerBloodthirstSpell(cdTimer *core.Timer) {
 			core.StartDelayedAction(sim, core.DelayedActionOptions{
 				DoAt: sim.CurrentTime + warrior.Bloodthirst.CD.Duration,
 				OnAction: func(_ *core.Simulation) {
-					if warrior.ShouldInstantSlam(sim) {
-						warrior.CastSlam(sim, warrior.CurrentTarget)
-					} else if warrior.CanBloodthirst(sim) {
-						warrior.Bloodthirst.Cast(sim, warrior.CurrentTarget)
+					if warrior.Bloodthirst.CanCast(sim, target) {
+						warrior.Bloodthirst.Cast(sim, target)
 					}
 				},
 			})
 		},
 	})
-}
-
-func (warrior *Warrior) CanBloodthirst(sim *core.Simulation) bool {
-	return warrior.Talents.Bloodthirst && warrior.CurrentRage() >= warrior.Bloodthirst.DefaultCast.Cost && warrior.Bloodthirst.IsReady(sim) && warrior.GCD.IsReady(sim)
 }

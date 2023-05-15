@@ -44,6 +44,7 @@ type Druid struct {
 	InsectSwarm          *core.Spell
 	GiftOfTheWild        *core.Spell
 	Lacerate             *core.Spell
+	Languish             *core.Spell
 	MangleBear           *core.Spell
 	MangleCat            *core.Spell
 	Maul                 *core.Spell
@@ -66,23 +67,15 @@ type Druid struct {
 	CatForm  *core.Spell
 	BearForm *core.Spell
 
-	InsectSwarmDot    *core.Dot
-	LacerateDot       *core.Dot
-	MoonfireDot       *core.Dot
-	RakeDot           *core.Dot
-	RipDot            *core.Dot
-	StarfallDot       *core.Dot
-	StarfallDotSplash *core.Dot
-
 	BarkskinAura             *core.Aura
 	BearFormAura             *core.Aura
 	BerserkAura              *core.Aura
 	CatFormAura              *core.Aura
 	ClearcastingAura         *core.Aura
-	DemoralizingRoarAuras    []*core.Aura
+	DemoralizingRoarAuras    core.AuraArray
 	EarthAndMoonAura         *core.Aura
 	EnrageAura               *core.Aura
-	FaerieFireAura           *core.Aura
+	FaerieFireAuras          core.AuraArray
 	FrenziedRegenerationAura *core.Aura
 	MaulQueueAura            *core.Aura
 	MoonkinT84PCAura         *core.Aura
@@ -94,6 +87,8 @@ type Druid struct {
 	SavageRoarAura           *core.Aura
 	SolarEclipseProcAura     *core.Aura
 	LunarEclipseProcAura     *core.Aura
+
+	BleedCategories core.ExclusiveCategoryArray
 
 	PrimalPrecisionRecoveryMetrics *core.ResourceMetrics
 	SavageRoarDurationTable        [6]time.Duration
@@ -144,28 +139,8 @@ func (druid *Druid) AddRaidBuffs(raidBuffs *proto.RaidBuffs) {
 	}
 }
 
-func (druid *Druid) IsScalableArmorSlot(itemType proto.ItemType) bool {
-	switch itemType {
-	case
-		proto.ItemType_ItemTypeNeck,
-		proto.ItemType_ItemTypeFinger,
-		proto.ItemType_ItemTypeTrinket,
-		proto.ItemType_ItemTypeWeapon:
-		return false
-	}
-	return true
-}
-
 func (druid *Druid) ScaleBaseArmor(multiplier float64) float64 {
-	addedArmor := 0.0
-
-	for _, item := range druid.Equip {
-		if druid.IsScalableArmorSlot(item.Type) {
-			addedArmor += multiplier * (item.Stats[stats.Armor] - item.Stats[stats.BonusArmor])
-		}
-	}
-
-	return addedArmor
+	return druid.Equip.Stats()[stats.Armor] * multiplier
 }
 
 func (druid *Druid) BalanceCritMultiplier() float64 {
@@ -193,6 +168,8 @@ func (druid *Druid) TryMaul(sim *core.Simulation, mhSwingSpell *core.Spell) *cor
 }
 
 func (druid *Druid) Initialize() {
+	druid.BleedCategories = druid.GetEnemyExclusiveCategories(core.BleedEffectCategory)
+
 	if druid.Talents.PrimalPrecision > 0 {
 		druid.PrimalPrecisionRecoveryMetrics = druid.NewEnergyMetrics(core.ActionID{SpellID: 48410})
 	}
@@ -270,6 +247,7 @@ func New(char core.Character, form DruidForm, selfBuffs SelfBuffs, talents strin
 	druid.EnableManaBar()
 
 	druid.AddStatDependency(stats.Strength, stats.AttackPower, 2)
+	druid.AddStatDependency(stats.BonusArmor, stats.Armor, 1)
 	// Druids get 0.012 crit per agi at level 80, roughly 1 per 83.33
 	druid.AddStatDependency(stats.Agility, stats.MeleeCrit, (1.0/83.33)*core.CritRatingPerCritChance)
 	// Druid get 0.0209 dodge per agi (before dr), roughly 1 per 47.16

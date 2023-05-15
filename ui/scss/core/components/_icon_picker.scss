@@ -20,6 +20,10 @@
       border-color: $success;
       filter: none;
     }
+
+    .gem-socket-container {
+      --gem-width: 0.8rem;
+    }
   }
 
   .icon-picker-button,
@@ -69,6 +73,7 @@
   .dropdown-menu {
     min-width: unset;
     background: grey;
+    border: none;
 
     &.show {
       display: grid;

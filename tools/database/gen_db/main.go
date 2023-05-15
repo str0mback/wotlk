@@ -12,12 +12,23 @@ import (
 	"github.com/wowsims/wotlk/sim/core"
 	"github.com/wowsims/wotlk/sim/core/proto"
 	_ "github.com/wowsims/wotlk/sim/encounters" // Needed for preset encounters.
+	"github.com/wowsims/wotlk/tools"
 	"github.com/wowsims/wotlk/tools/database"
 )
 
-// go run ./tools/database/gen_db
+// To do a full re-scrape, delete the previous output file first.
+// go run ./tools/database/gen_db -outDir=assets -gen=atlasloot
+// go run ./tools/database/gen_db -outDir=assets -gen=wowhead-items
+// go run ./tools/database/gen_db -outDir=assets -gen=wowhead-spells -maxid=75000
+// go run ./tools/database/gen_db -outDir=assets -gen=wowhead-gearplannerdb
+// go run ./tools/database/gen_db -outDir=assets -gen=wotlk-items
+// go run ./tools/database/gen_db -outDir=assets -gen=wago-db2-items
+// go run ./tools/database/gen_db -outDir=assets -gen=db
 
+var minId = flag.Int("minid", 1, "Minimum ID to scan for")
+var maxId = flag.Int("maxid", 57000, "Maximum ID to scan for")
 var outDir = flag.String("outDir", "assets", "Path to output directory for writing generated .go files.")
+var genAsset = flag.String("gen", "", "Asset to generate. Valid values are 'db', 'atlasloot', 'wowhead-items', 'wowhead-spells', 'wowhead-itemdb', 'wotlk-items', and 'wago-db2-items'")
 
 func main() {
 	flag.Parse()
@@ -28,11 +39,38 @@ func main() {
 	dbDir := fmt.Sprintf("%s/database", *outDir)
 	inputsDir := fmt.Sprintf("%s/db_inputs", *outDir)
 
+	if *genAsset == "atlasloot" {
+		db := database.ReadAtlasLootData()
+		db.WriteJson(fmt.Sprintf("%s/atlasloot_db.json", inputsDir))
+		return
+	} else if *genAsset == "wowhead-items" {
+		database.NewWowheadItemTooltipManager(fmt.Sprintf("%s/wowhead_item_tooltips.csv", inputsDir)).Fetch(int32(*minId), int32(*maxId))
+		return
+	} else if *genAsset == "wowhead-spells" {
+		database.NewWowheadSpellTooltipManager(fmt.Sprintf("%s/wowhead_spell_tooltips.csv", inputsDir)).Fetch(int32(*minId), int32(*maxId))
+		return
+	} else if *genAsset == "wowhead-gearplannerdb" {
+		tools.WriteFile(fmt.Sprintf("%s/wowhead_gearplannerdb.txt", inputsDir), tools.ReadWebRequired("https://nether.wowhead.com/wotlk/data/gear-planner?dv=100"))
+		return
+	} else if *genAsset == "wotlk-items" {
+		database.NewWotlkItemTooltipManager(fmt.Sprintf("%s/wotlk_items_tooltips.csv", inputsDir)).Fetch(int32(*minId), int32(*maxId))
+		return
+	} else if *genAsset == "wago-db2-items" {
+		tools.WriteFile(fmt.Sprintf("%s/wago_db2_items.csv", inputsDir), tools.ReadWebRequired("https://wago.tools/db2/ItemSparse/csv?build=3.4.2.49311"))
+		return
+	} else if *genAsset != "db" {
+		panic("Invalid gen value")
+	}
+
 	itemTooltips := database.NewWowheadItemTooltipManager(fmt.Sprintf("%s/wowhead_item_tooltips.csv", inputsDir)).Read()
 	spellTooltips := database.NewWowheadSpellTooltipManager(fmt.Sprintf("%s/wowhead_spell_tooltips.csv", inputsDir)).Read()
+	wowheadDB := database.ParseWowheadDB(tools.ReadFile(fmt.Sprintf("%s/wowhead_gearplannerdb.txt", inputsDir)))
+	atlaslootDB := database.ReadDatabaseFromJson(tools.ReadFile(fmt.Sprintf("%s/atlasloot_db.json", inputsDir)))
+	factionRestrictions := database.ParseItemFactionRestrictionsFromWagoDB(tools.ReadFile(fmt.Sprintf("%s/wago_db2_items.csv", inputsDir)))
 
 	db := database.NewWowDatabase()
 	db.Encounters = core.PresetEncounters
+	db.GlyphIDs = getGlyphIDsFromJson(fmt.Sprintf("%s/glyph_id_map.json", inputsDir))
 
 	for _, response := range itemTooltips {
 		if response.IsEquippable() {
@@ -42,10 +80,23 @@ func main() {
 		}
 	}
 
+	for _, wowheadItem := range wowheadDB.Items {
+		item := wowheadItem.ToProto()
+		if _, ok := db.Items[item.Id]; ok {
+			db.MergeItem(item)
+		}
+	}
+	for _, item := range atlaslootDB.Items {
+		if _, ok := db.Items[item.Id]; ok {
+			db.MergeItem(item)
+		}
+	}
+
 	db.MergeItems(database.ItemOverrides)
 	db.MergeGems(database.GemOverrides)
 	db.MergeEnchants(database.EnchantOverrides)
 	ApplyGlobalFilters(db)
+	AttachFactionInformation(db, factionRestrictions)
 
 	leftovers := db.Clone()
 	ApplyNonSimmableFilters(leftovers)
@@ -65,6 +116,14 @@ func main() {
 		db.AddItemIcon(itemID, itemTooltips)
 	}
 
+	for _, item := range db.Items {
+		for _, source := range item.Sources {
+			if crafted := source.GetCrafted(); crafted != nil {
+				db.AddSpellIcon(crafted.SpellId, spellTooltips)
+			}
+		}
+	}
+
 	for _, spellId := range database.SharedSpellsIcons {
 		db.AddSpellIcon(spellId, spellTooltips)
 	}
@@ -74,6 +133,10 @@ func main() {
 			db.AddSpellIcon(spellId, spellTooltips)
 		}
 	}
+
+	atlasDBProto := atlaslootDB.ToUIProto()
+	db.MergeZones(atlasDBProto.Zones)
+	db.MergeNpcs(atlasDBProto.Npcs)
 
 	db.WriteBinaryAndJson(fmt.Sprintf("%s/db.bin", dbDir), fmt.Sprintf("%s/db.json", dbDir))
 }
@@ -140,6 +203,13 @@ func ApplyGlobalFilters(db *database.WowDatabase) {
 	db.SpellIcons = core.FilterMap(db.SpellIcons, func(_ int32, icon *proto.IconData) bool {
 		return icon.Name != "" && icon.Icon != ""
 	})
+}
+
+// AttachFactionInformation attaches faction information (faction restrictions) to the DB items.
+func AttachFactionInformation(db *database.WowDatabase, factionRestrictions map[int32]proto.UIItem_FactionRestriction) {
+	for _, item := range db.Items {
+		item.FactionRestriction = factionRestrictions[item.Id]
+	}
 }
 
 // Filters out entities which shouldn't be included in the sim.
@@ -270,4 +340,36 @@ func GetAllTalentSpellIds(inputsDir *string) map[string][]int32 {
 
 	return ret_db
 
+}
+
+type GlyphID struct {
+	ItemID  int32 `json:"itemId"`
+	SpellID int32 `json:"spellId"`
+}
+
+func getGlyphIDsFromJson(infile string) []*proto.GlyphID {
+	data, err := os.ReadFile(infile)
+	if err != nil {
+		log.Fatalf("failed to load glyph json file: %s", err)
+	}
+
+	var buf bytes.Buffer
+	err = json.Compact(&buf, []byte(data))
+	if err != nil {
+		log.Fatalf("failed to compact json: %s", err)
+	}
+
+	var glyphIDs []GlyphID
+
+	err = json.Unmarshal(buf.Bytes(), &glyphIDs)
+	if err != nil {
+		log.Fatalf("failed to parse glyph IDs to json %s", err)
+	}
+
+	return core.MapSlice(glyphIDs, func(gid GlyphID) *proto.GlyphID {
+		return &proto.GlyphID{
+			ItemId:  gid.ItemID,
+			SpellId: gid.SpellID,
+		}
+	})
 }

@@ -1,35 +1,22 @@
 package warlock
 
 import (
-	"strconv"
 	"time"
 
 	"github.com/wowsims/wotlk/sim/core"
 )
 
 func (warlock *Warlock) registerSeedSpell() {
-	numTargets := int(warlock.Env.GetNumTargets())
-
-	warlock.Seeds = make([]*core.Spell, numTargets)
-	warlock.SeedDots = make([]*core.Dot, numTargets)
-
-	// For this simulation we always assume the seed target didn't die to trigger the seed because we don't simulate health.
-	// This effectively lowers the seed AOE cap using the function:
-	for i := 0; i < numTargets; i++ {
-		warlock.makeSeed(i, numTargets)
-	}
-}
-
-func (warlock *Warlock) makeSeed(targetIdx int, numTargets int) {
-	actionID := core.ActionID{SpellID: 47836, Tag: 1}
+	actionID := core.ActionID{SpellID: 47836}
 
 	seedExplosion := warlock.RegisterSpell(core.SpellConfig{
-		ActionID:    actionID,
-		SpellSchool: core.SpellSchoolShadow,
-		ProcMask:    core.ProcMaskSpellDamage,
+		ActionID:     actionID.WithTag(1), // actually 47834
+		SpellSchool:  core.SpellSchoolShadow,
+		ProcMask:     core.ProcMaskSpellDamage,
+		Flags:        core.SpellFlagHauntSE,
+		MissileSpeed: 28,
 
 		BonusCritRating: 0 +
-			warlock.masterDemonologistShadowCrit +
 			float64(warlock.Talents.ImprovedCorruption)*core.CritRatingPerCritChance,
 		DamageMultiplierAdditive: 1 +
 			warlock.GrandFirestoneBonus() +
@@ -39,24 +26,27 @@ func (warlock *Warlock) makeSeed(targetIdx int, numTargets int) {
 		ThreatMultiplier: 1 - 0.1*float64(warlock.Talents.ImprovedDrainSoul),
 
 		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
-			dmgFromSP := 0.2129 * spell.SpellPower()
-			for _, aoeTarget := range sim.Encounter.Targets {
-				// Seeded target is not affected by explosion.
-				if &aoeTarget.Unit == target {
-					continue
-				}
-
-				baseDamage := sim.Roll(1633, 1897) + dmgFromSP
-				baseDamage *= sim.Encounter.AOECapMultiplier()
-				spell.CalcAndDealDamage(sim, &aoeTarget.Unit, baseDamage, spell.OutcomeMagicHitAndCrit)
+			baseDmg := (sim.Roll(1633, 1897) + 0.286*spell.SpellPower()) * sim.Encounter.AOECapMultiplier()
+			for _, aoeTarget := range sim.Encounter.TargetUnits {
+				spell.CalcAndDealDamage(sim, aoeTarget, baseDmg, spell.OutcomeMagicHitAndCrit)
 			}
 		},
 	})
 
-	warlock.Seeds[targetIdx] = warlock.RegisterSpell(core.SpellConfig{
+	warlock.SeedDamageTracker = make([]float64, len(warlock.Env.AllUnits))
+	trySeedPop := func(sim *core.Simulation, target *core.Unit, dmg float64) {
+		warlock.SeedDamageTracker[target.UnitIndex] += dmg
+		if warlock.SeedDamageTracker[target.UnitIndex] > 1518 {
+			warlock.Seed.Dot(target).Deactivate(sim)
+			seedExplosion.Cast(sim, target)
+		}
+	}
+
+	warlock.Seed = warlock.RegisterSpell(core.SpellConfig{
 		ActionID:    actionID,
 		SpellSchool: core.SpellSchoolShadow,
 		ProcMask:    core.ProcMaskEmpty,
+		Flags:       core.SpellFlagHauntSE,
 
 		ManaCost: core.ManaCostOptions{
 			BaseCost:   0.34,
@@ -76,63 +66,52 @@ func (warlock *Warlock) makeSeed(targetIdx int, numTargets int) {
 			core.TernaryFloat64(warlock.Talents.SiphonLife, 0.05, 0),
 		ThreatMultiplier: 1 - 0.1*float64(warlock.Talents.ImprovedDrainSoul),
 
+		Dot: core.DotConfig{
+			Aura: core.Aura{
+				Label: "Seed",
+				OnSpellHitDealt: func(aura *core.Aura, sim *core.Simulation, spell *core.Spell, result *core.SpellResult) {
+					if !result.Landed() {
+						return
+					}
+					if spell.ActionID.SpellID == actionID.SpellID {
+						return // Seed can't pop seed.
+					}
+					trySeedPop(sim, aura.Unit, result.Damage)
+				},
+				OnPeriodicDamageDealt: func(aura *core.Aura, sim *core.Simulation, spell *core.Spell, result *core.SpellResult) {
+					trySeedPop(sim, aura.Unit, result.Damage)
+				},
+				OnGain: func(aura *core.Aura, sim *core.Simulation) {
+					warlock.SeedDamageTracker[aura.Unit.UnitIndex] = 0
+				},
+				OnExpire: func(aura *core.Aura, sim *core.Simulation) {
+					warlock.SeedDamageTracker[aura.Unit.UnitIndex] = 0
+				},
+			},
+
+			NumberOfTicks: 6,
+			TickLength:    time.Second * 3,
+
+			OnSnapshot: func(sim *core.Simulation, target *core.Unit, dot *core.Dot, isRollover bool) {
+				dot.SnapshotBaseDamage = 1518/6 + 0.25*dot.Spell.SpellPower()
+				dot.SnapshotAttackerMultiplier = dot.Spell.AttackerDamageMultiplier(dot.Spell.Unit.AttackTables[target.UnitIndex])
+			},
+			OnTick: func(sim *core.Simulation, target *core.Unit, dot *core.Dot) {
+				dot.CalcAndDealPeriodicSnapshotDamage(sim, target, dot.OutcomeTick)
+			},
+		},
+
 		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
 			result := spell.CalcOutcome(sim, target, spell.OutcomeMagicHit)
-			if result.Landed() {
-				if warlock.Rotation.DetonateSeed {
-					seedExplosion.Cast(sim, target)
-				} else {
-					warlock.SeedDots[targetIdx].Apply(sim)
+			spell.WaitTravelTime(sim, func(sim *core.Simulation) {
+				if result.Landed() {
+					if warlock.Rotation.DetonateSeed {
+						seedExplosion.Cast(sim, target)
+					} else {
+						spell.Dot(target).Apply(sim)
+					}
 				}
-			}
-			spell.DealOutcome(sim, result)
-		},
-	})
-
-	target := warlock.Env.GetTargetUnit(int32(targetIdx))
-	seedDmgTracker := 0.0
-	trySeedPop := func(sim *core.Simulation, dmg float64) {
-		seedDmgTracker += dmg
-		if seedDmgTracker > 1518 {
-			warlock.SeedDots[targetIdx].Deactivate(sim)
-			seedExplosion.Cast(sim, target)
-			seedDmgTracker = 0
-		}
-	}
-	warlock.SeedDots[targetIdx] = core.NewDot(core.Dot{
-		Spell: warlock.Seeds[targetIdx],
-		Aura: target.RegisterAura(core.Aura{
-			Label:    "Seed-" + strconv.Itoa(int(warlock.Index)),
-			ActionID: actionID,
-			OnSpellHitDealt: func(aura *core.Aura, sim *core.Simulation, spell *core.Spell, result *core.SpellResult) {
-				if !result.Landed() {
-					return
-				}
-				if spell.ActionID.SpellID == actionID.SpellID {
-					return // Seed can't pop seed.
-				}
-				trySeedPop(sim, result.Damage)
-			},
-			OnPeriodicDamageDealt: func(aura *core.Aura, sim *core.Simulation, spell *core.Spell, result *core.SpellResult) {
-				trySeedPop(sim, result.Damage)
-			},
-			OnGain: func(aura *core.Aura, sim *core.Simulation) {
-				seedDmgTracker = 0
-			},
-			OnExpire: func(aura *core.Aura, sim *core.Simulation) {
-				seedDmgTracker = 0
-			},
-		}),
-
-		NumberOfTicks: 6,
-		TickLength:    time.Second * 3,
-
-		OnSnapshot: func(sim *core.Simulation, target *core.Unit, dot *core.Dot, isRollover bool) {
-			dot.SnapshotBaseDamage = 1518/6 + 0.25*dot.Spell.SpellPower()
-			dot.SnapshotAttackerMultiplier = dot.Spell.AttackerDamageMultiplier(dot.Spell.Unit.AttackTables[target.UnitIndex])
-		},
-		OnTick: func(sim *core.Simulation, target *core.Unit, dot *core.Dot) {
-			dot.CalcAndDealPeriodicSnapshotDamage(sim, target, dot.OutcomeTick)
+			})
 		},
 	})
 }

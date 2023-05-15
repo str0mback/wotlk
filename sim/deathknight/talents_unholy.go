@@ -1,11 +1,11 @@
 package deathknight
 
 import (
+	"time"
+
 	"github.com/wowsims/wotlk/sim/core"
 	"github.com/wowsims/wotlk/sim/core/proto"
 	"github.com/wowsims/wotlk/sim/core/stats"
-	"strconv"
-	"time"
 )
 
 func (dk *Deathknight) ApplyUnholyTalents() {
@@ -39,7 +39,12 @@ func (dk *Deathknight) applyRageOfRivendare() {
 
 	bonus := 1.0 + 0.02*float64(dk.Talents.RageOfRivendare)
 	dk.RoRTSBonus = func(target *core.Unit) float64 {
-		return core.TernaryFloat64(dk.BloodPlagueDisease[target.Index].IsActive(), bonus, 1.0)
+		// assume if external ebon plaguebringer is active, then another DK will always have Blood Plague up
+		if dk.MakeTSRoRAssumptions && target.HasActiveAura("EbonPlaguebringer-1") {
+			return bonus
+		}
+
+		return core.TernaryFloat64(target.HasActiveAuraWithTag("BloodPlague"), bonus, 1.0)
 	}
 }
 
@@ -66,7 +71,7 @@ func (dk *Deathknight) applyWanderingPlague() {
 		ActionID:    actionID,
 		SpellSchool: core.SpellSchoolShadow,
 		ProcMask:    core.ProcMaskEmpty,
-		Flags:       core.SpellFlagNoOnCastComplete | core.SpellFlagIgnoreAttackerModifiers,
+		Flags:       core.SpellFlagNoOnCastComplete | core.SpellFlagIgnoreAttackerModifiers | core.SpellFlagNoOnDamageDealt,
 
 		DamageMultiplier: []float64{0.0, 0.33, 0.66, 1.0}[dk.Talents.WanderingPlague],
 		ThreatMultiplier: 1,
@@ -74,8 +79,8 @@ func (dk *Deathknight) applyWanderingPlague() {
 		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
 			baseDamage := dk.LastDiseaseDamage * dk.bonusCoeffs.wanderingPlagueMultiplier
 			baseDamage *= sim.Encounter.AOECapMultiplier()
-			for _, aoeTarget := range sim.Encounter.Targets {
-				spell.CalcAndDealDamage(sim, &aoeTarget.Unit, baseDamage, spell.OutcomeAlwaysHit)
+			for _, aoeTarget := range sim.Encounter.TargetUnits {
+				spell.CalcAndDealDamage(sim, aoeTarget, baseDamage, spell.OutcomeAlwaysHit)
 			}
 		},
 	})
@@ -86,34 +91,41 @@ func (dk *Deathknight) applyNecrosis() {
 		return
 	}
 
-	coeff := 0.04 * float64(dk.Talents.Necrosis)
-	var curDmg float64
-	necrosisHit := dk.Unit.RegisterSpell(core.SpellConfig{
-		ActionID:    core.ActionID{SpellID: 51460},
-		SpellSchool: core.SpellSchoolShadow,
-		ProcMask:    core.ProcMaskEmpty,
-		Flags:       core.SpellFlagNoOnCastComplete | core.SpellFlagIgnoreModifiers,
-
+	dk.NecrosisCoeff = 0.04 * float64(dk.Talents.Necrosis)
+	dk.Necrosis = dk.Unit.RegisterSpell(core.SpellConfig{
+		ActionID:         core.ActionID{SpellID: 51460},
+		SpellSchool:      core.SpellSchoolShadow,
+		ProcMask:         core.ProcMaskEmpty,
+		Flags:            core.SpellFlagNoOnCastComplete | core.SpellFlagIgnoreModifiers | core.SpellFlagNoOnDamageDealt,
 		DamageMultiplier: 1,
 		ThreatMultiplier: 1,
-
-		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
-			spell.CalcAndDealDamage(sim, target, curDmg*coeff, spell.OutcomeAlwaysHit)
-		},
 	})
 
-	dk.NecrosisAura = core.MakePermanent(dk.RegisterAura(core.Aura{
-		Label: "Necrosis",
-		// ActionID: core.ActionID{SpellID: 51465}, // hide from metrics
-		OnSpellHitDealt: func(aura *core.Aura, sim *core.Simulation, spell *core.Spell, result *core.SpellResult) {
-			if result.Damage == 0 || !spell.ProcMask.Matches(core.ProcMaskMeleeWhiteHit) {
-				return
-			}
+	// Replace normal melee swing applier with one that also applies necrosis damage.
+	// Doing it this way means you don't see necrosis dmg on the timeline but is faster.
+	dk.AutoAttacks.MHConfig.ApplyEffects = dk.necrosisMHAuto
+	dk.AutoAttacks.OHConfig.ApplyEffects = dk.necrosisOHAuto
+}
 
-			curDmg = result.Damage
-			necrosisHit.Cast(sim, result.Target)
-		},
-	}))
+func (dk *Deathknight) necrosisOHAuto(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
+	baseDamage := spell.Unit.OHWeaponDamage(sim, spell.MeleeAttackPower()) +
+		spell.BonusWeaponDamage()
+
+	if result := spell.CalcAndDealDamage(sim, target, baseDamage, spell.OutcomeMeleeWhite); result.Damage > 0 {
+		dk.Necrosis.SpellMetrics[target.UnitIndex].Hits++
+		dk.Necrosis.SpellMetrics[target.UnitIndex].Casts++
+		dk.Necrosis.CalcAndDealDamage(sim, target, result.Damage*dk.NecrosisCoeff, spell.OutcomeAlwaysHit)
+	}
+}
+func (dk *Deathknight) necrosisMHAuto(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
+	baseDamage := spell.Unit.MHWeaponDamage(sim, spell.MeleeAttackPower()) +
+		spell.BonusWeaponDamage()
+
+	if result := spell.CalcAndDealDamage(sim, target, baseDamage, spell.OutcomeMeleeWhite); result.Damage > 0 {
+		dk.Necrosis.SpellMetrics[target.UnitIndex].Hits++
+		dk.Necrosis.SpellMetrics[target.UnitIndex].Casts++
+		dk.Necrosis.CalcAndDealDamage(sim, target, result.Damage*dk.NecrosisCoeff, spell.OutcomeAlwaysHit)
+	}
 }
 
 func (dk *Deathknight) applyBloodCakedBlade() {
@@ -172,7 +184,7 @@ func (dk *Deathknight) bloodCakedBladeHit(isMh bool) *core.Spell {
 					spell.Unit.OHWeaponDamage(sim, spell.MeleeAttackPower()) +
 					spell.BonusWeaponDamage()
 			}
-			baseDamage *= 0.25 + 0.125*dk.dkCountActiveDiseases(target)
+			baseDamage *= 0.25 + 0.125*dk.dkCountActiveDiseasesBcb(target)
 
 			spell.CalcAndDealDamage(sim, target, baseDamage, spell.OutcomeMeleeWeaponSpecialNoCrit)
 		},
@@ -180,7 +192,8 @@ func (dk *Deathknight) bloodCakedBladeHit(isMh bool) *core.Spell {
 }
 
 func (dk *Deathknight) applyEbonPlaguebringerOrCryptFever() {
-	dk.EbonPlagueOrCryptFeverAura = make([]*core.Aura, dk.Env.GetNumTargets())
+	dk.EbonPlagueOrCryptFeverAura = make([]*core.Aura, len(dk.Env.Encounter.TargetUnits))
+
 	if dk.Talents.CryptFever == 0 {
 		return
 	}
@@ -189,10 +202,9 @@ func (dk *Deathknight) applyEbonPlaguebringerOrCryptFever() {
 	dk.AddStat(stats.MeleeCrit, ebonPlaguebringerBonusCrit)
 	dk.AddStat(stats.SpellCrit, ebonPlaguebringerBonusCrit)
 
-	for _, encounterTarget := range dk.Env.Encounter.Targets {
-		target := &encounterTarget.Unit
+	for i, target := range dk.Env.Encounter.TargetUnits {
 		epAura := core.EbonPlaguebringerOrCryptFeverAura(dk.GetCharacter(), target, dk.Talents.Epidemic, dk.Talents.CryptFever, dk.Talents.EbonPlaguebringer)
-		dk.EbonPlagueOrCryptFeverAura[target.Index] = epAura
+		dk.EbonPlagueOrCryptFeverAura[i] = epAura
 	}
 }
 
@@ -222,14 +234,12 @@ func (dk *Deathknight) procUnholyBlight(sim *core.Simulation, target *core.Unit,
 		return
 	}
 
-	dot := dk.UnholyBlightDots[target.Index]
-
-	var outstandingDamage float64
-	if dot.IsActive() {
-		outstandingDamage = dot.SnapshotBaseDamage * float64(dot.NumberOfTicks-dot.TickCount)
-	}
+	dot := dk.UnholyBlightSpell.Dot(target)
 
 	newDamage := deathCoilDamage * 0.10
+	outstandingDamage := core.TernaryFloat64(dot.IsActive(), dot.SnapshotBaseDamage*float64(dot.NumberOfTicks-dot.TickCount), 0)
+
+	dot.SnapshotAttackerMultiplier = dk.UnholyBlightSpell.DamageMultiplier
 	dot.SnapshotBaseDamage = (outstandingDamage + newDamage) / float64(dot.NumberOfTicks)
 
 	dk.UnholyBlightSpell.Cast(sim, target)
@@ -240,43 +250,29 @@ func (dk *Deathknight) applyUnholyBlight() {
 		return
 	}
 
-	glyphDmgBonus := core.TernaryFloat64(dk.HasMajorGlyph(proto.DeathknightMajorGlyph_GlyphOfUnholyBlight), 1.4, 1.0)
-
-	actionID := core.ActionID{SpellID: 50536}
-
 	dk.UnholyBlightSpell = dk.Unit.RegisterSpell(core.SpellConfig{
-		ActionID:    actionID,
+		ActionID:    core.ActionID{SpellID: 50536},
 		SpellSchool: core.SpellSchoolShadow,
 		ProcMask:    core.ProcMaskEmpty,
-		Flags:       core.SpellFlagNoOnCastComplete | core.SpellFlagIgnoreModifiers,
+		Flags:       core.SpellFlagNoOnCastComplete | core.SpellFlagIgnoreModifiers | core.SpellFlagNoOnDamageDealt,
 
-		DamageMultiplier: 1,
+		DamageMultiplier: core.TernaryFloat64(dk.HasMajorGlyph(proto.DeathknightMajorGlyph_GlyphOfUnholyBlight), 1.4, 1),
 		ThreatMultiplier: 1,
 
-		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
-			dk.UnholyBlightDots[target.Index].ApplyOrReset(sim)
-			spell.CalcAndDealOutcome(sim, target, spell.OutcomeAlwaysHit)
-		},
-	})
-
-	dk.UnholyBlightDots = make([]*core.Dot, dk.Env.GetNumTargets())
-	for i := range dk.UnholyBlightDots {
-		target := dk.Env.GetTargetUnit(int32(i))
-
-		dk.UnholyBlightDots[target.Index] = core.NewDot(core.Dot{
-			Spell: dk.UnholyBlightSpell,
-			Aura: target.RegisterAura(core.Aura{
-				Label:    "UnholyBlight-" + strconv.Itoa(int(dk.Index)),
-				ActionID: actionID,
-			}),
+		Dot: core.DotConfig{
+			Aura: core.Aura{
+				Label: "UnholyBlight",
+			},
 			NumberOfTicks: 10,
 			TickLength:    time.Second * 1,
-
-			SnapshotAttackerMultiplier: glyphDmgBonus,
 
 			OnTick: func(sim *core.Simulation, target *core.Unit, dot *core.Dot) {
 				dot.CalcAndDealPeriodicSnapshotDamage(sim, target, dot.OutcomeTick)
 			},
-		})
-	}
+		},
+		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
+			spell.Dot(target).ApplyOrReset(sim)
+			spell.CalcAndDealOutcome(sim, target, spell.OutcomeAlwaysHit)
+		},
+	})
 }

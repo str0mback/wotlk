@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"math/rand"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -27,6 +28,7 @@ type Simulation struct {
 	pendingActions []*PendingAction
 	CurrentTime    time.Duration // duration that has elapsed in the sim since starting
 	Duration       time.Duration // Duration of current iteration
+	NeedsInput     bool          // Sim is in interactive mode and needs input
 
 	ProgressReport func(*proto.ProgressMetrics)
 
@@ -41,7 +43,7 @@ type Simulation struct {
 	executePhaseCallbacks []func(*Simulation, int) // 2nd parameter is 35 for 35%, 25 for 25% and 20 for 20%
 }
 
-func RunSim(rsr *proto.RaidSimRequest, progress chan *proto.ProgressMetrics) (result *proto.RaidSimResult) {
+func RunSim(rsr *proto.RaidSimRequest, progress chan *proto.ProgressMetrics) *proto.RaidSimResult {
 	return runSim(rsr, progress, false)
 }
 
@@ -135,15 +137,19 @@ func NewSim(rsr *proto.RaidSimRequest) *Simulation {
 	}
 }
 
-// Returns a random float.
+// Returns a random float64 between 0.0 (inclusive) and 1.0 (exclusive).
 //
 // In tests, although we can set the initial seed, test results are still very
 // sensitive to the exact order of RandomFloat() calls. To mitigate this, when
 // testing we use a separate rand object for each RandomFloat callsite,
 // distinguished by the label string.
 func (sim *Simulation) RandomFloat(label string) float64 {
+	return sim.labelRand(label).NextFloat64()
+}
+
+func (sim *Simulation) labelRand(label string) Rand {
 	if !sim.isTest {
-		return sim.rand.NextFloat64()
+		return sim.rand
 	}
 
 	labelRand, isPresent := sim.testRands[label]
@@ -152,11 +158,7 @@ func (sim *Simulation) RandomFloat(label string) float64 {
 		labelRand = NewSplitMix(uint64(makeTestRandSeed(sim.rseed, label)))
 		sim.testRands[label] = labelRand
 	}
-	v := labelRand.NextFloat64()
-	// if sim.Log != nil {
-	// 	sim.Log("FLOAT64 '%s': %0.5f", label, v)
-	// }
-	return v
+	return labelRand
 }
 
 func (sim *Simulation) reseedRands(i int64) {
@@ -174,10 +176,17 @@ func makeTestRandSeed(rseed int64, label string) int64 {
 	return int64(hash(label + strconv.FormatInt(rseed, 16)))
 }
 
+func (sim *Simulation) RandomExpFloat(label string) float64 {
+	return rand.New(sim.labelRand(label)).ExpFloat64()
+}
+
 // Shorthand for commonly-used RNG behavior.
 // Returns a random number between min and max.
 func (sim *Simulation) Roll(min float64, max float64) float64 {
-	return min + (max-min)*sim.RandomFloat("Damage Roll")
+	return sim.RollWithLabel(min, max, "Damage Roll")
+}
+func (sim *Simulation) RollWithLabel(min float64, max float64, label string) float64 {
+	return min + (max-min)*sim.RandomFloat(label)
 }
 
 func (sim *Simulation) Proc(p float64, label string) bool {
@@ -195,6 +204,26 @@ func (sim *Simulation) Reset() {
 	sim.reset()
 }
 
+func (sim *Simulation) Reseed(seed int64) {
+	sim.reseedRands(seed)
+}
+
+func (sim *Simulation) Init() {
+	for _, target := range sim.Encounter.Targets {
+		target.init(sim)
+	}
+	for _, party := range sim.Raid.Parties {
+		for _, player := range party.Players {
+			character := player.GetCharacter()
+			character.init(sim, player)
+
+			for _, petAgent := range character.Pets {
+				petAgent.GetCharacter().init(sim, petAgent)
+			}
+		}
+	}
+}
+
 // Reset will set sim back and erase all current state.
 // This is automatically called before every 'Run'.
 func (sim *Simulation) reset() {
@@ -202,9 +231,6 @@ func (sim *Simulation) reset() {
 		sim.Log("SIM RESET")
 		sim.Log("----------------------")
 	}
-
-	// Reset primary targets damage taken for tracking health fights.
-	sim.Encounter.DamageTaken = 0
 
 	if sim.Encounter.DurationIsEstimate && sim.CurrentTime != 0 {
 		sim.BaseDuration = sim.CurrentTime
@@ -219,8 +245,6 @@ func (sim *Simulation) reset() {
 	sim.executePhase25Begins = time.Duration(float64(sim.Duration) * (1.0 - sim.Encounter.ExecuteProportion_25))
 	sim.executePhase35Begins = time.Duration(float64(sim.Duration) * (1.0 - sim.Encounter.ExecuteProportion_35))
 
-	sim.CurrentTime = 0.0
-
 	sim.pendingActions = make([]*PendingAction, 0, 64)
 
 	sim.executePhase20 = false
@@ -228,13 +252,9 @@ func (sim *Simulation) reset() {
 	sim.executePhase35 = false
 	sim.executePhaseCallbacks = []func(*Simulation, int){}
 
-	// Targets need to be reset before the raid, so that players can check for
-	// the presence of permanent target auras in their Reset handlers.
-	for _, target := range sim.Encounter.Targets {
-		target.Reset(sim)
-	}
+	sim.CurrentTime = 0
 
-	sim.Raid.reset(sim)
+	sim.Environment.reset(sim)
 
 	sim.initManaTickAction()
 }
@@ -255,20 +275,7 @@ func (sim *Simulation) run() *proto.RaidSimResult {
 	// 	fmt.Printf(fmt.Sprintf("[%0.1f] "+message+"\n", append([]interface{}{sim.CurrentTime.Seconds()}, vals...)...))
 	// }
 
-	for _, target := range sim.Encounter.Targets {
-		target.init(sim)
-	}
-
-	for _, party := range sim.Raid.Parties {
-		for _, player := range party.Players {
-			character := player.GetCharacter()
-			character.init(sim, player)
-
-			for _, petAgent := range character.Pets {
-				petAgent.GetCharacter().init(sim, petAgent)
-			}
-		}
-	}
+	sim.Init()
 
 	sim.runOnce()
 	firstIterationDuration := sim.Duration
@@ -318,40 +325,39 @@ func (sim *Simulation) run() *proto.RaidSimResult {
 	return result
 }
 
-// RunOnce is the main event loop. It will run the simulation for number of seconds.
-func (sim *Simulation) runOnce() {
-	sim.reset()
-
-	sim.Raid.Prepull(sim)
-
+func (sim *Simulation) runPendingActions(max time.Duration) {
 	for {
-		last := len(sim.pendingActions) - 1
-		pa := sim.pendingActions[last]
-		sim.pendingActions = sim.pendingActions[:last]
-		if pa.cancelled {
-			continue
+		finished := sim.Step(max)
+		if finished {
+			return
 		}
+	}
+}
 
-		// Use duration as an end check if not using health.
-		if sim.Encounter.EndFightAtHealth == 0 {
-			if pa.NextActionAt > sim.Duration {
-				break
+func (sim *Simulation) PrePull() {
+	if len(sim.Environment.prepullActions) > 0 {
+		sim.CurrentTime = sim.Environment.prepullActions[0].DoAt
+
+		for _, prepullAction := range sim.Environment.prepullActions {
+			if prepullAction.DoAt > sim.CurrentTime {
+				sim.runPendingActions(prepullAction.DoAt)
+				sim.advance(prepullAction.DoAt - sim.CurrentTime)
 			}
-		} else if sim.Encounter.EndFightAtHealth < sim.Encounter.DamageTaken {
-			break
+			prepullAction.Action(sim)
 		}
 
-		if pa.NextActionAt > sim.CurrentTime {
-			sim.advance(pa.NextActionAt - sim.CurrentTime)
+		if sim.CurrentTime < 0 {
+			sim.runPendingActions(0)
+			sim.advance(0 - sim.CurrentTime)
 		}
-		pa.consumed = true
-
-		if pa.cancelled {
-			continue // pa was cancelled during the advance.
-		}
-		pa.OnAction(sim)
 	}
 
+	for _, unit := range sim.Environment.AllUnits {
+		unit.startPull(sim)
+	}
+}
+
+func (sim *Simulation) Cleanup() {
 	// The last event loop will leave CurrentTime at some value close to but not
 	// quite at the Duration. Explicitly set this so that accesses to CurrentTime
 	// during the doneIteration phase will return the Duration value, which is
@@ -370,9 +376,55 @@ func (sim *Simulation) runOnce() {
 	for _, unit := range sim.Raid.AllUnits {
 		unit.Metrics.doneIteration(unit, sim)
 	}
-	for _, target := range sim.Encounter.Targets {
-		target.Metrics.doneIteration(&target.Unit, sim)
+	for _, target := range sim.Encounter.TargetUnits {
+		target.Metrics.doneIteration(target, sim)
 	}
+}
+
+// RunOnce is the main event loop. It will run the simulation for number of seconds.
+func (sim *Simulation) runOnce() {
+	sim.reset()
+	sim.PrePull()
+	sim.runPendingActions(NeverExpires)
+	sim.Cleanup()
+}
+
+func (sim *Simulation) Step(max time.Duration) bool {
+	if len(sim.pendingActions) == 0 {
+		return true
+	}
+
+	last := len(sim.pendingActions) - 1
+	pa := sim.pendingActions[last]
+	sim.pendingActions = sim.pendingActions[:last]
+	if pa.cancelled {
+		return false
+	}
+
+	// Use duration as an end check if not using health.
+	if sim.Encounter.EndFightAtHealth == 0 {
+		if pa.NextActionAt > sim.Duration {
+			return true
+		}
+	} else if sim.Encounter.EndFightAtHealth < sim.Encounter.DamageTaken {
+		return true
+	}
+
+	if pa.NextActionAt > sim.CurrentTime {
+		if pa.NextActionAt < max {
+			sim.advance(pa.NextActionAt - sim.CurrentTime)
+		} else {
+			sim.pendingActions = append(sim.pendingActions, pa)
+			return true
+		}
+	}
+	pa.consumed = true
+
+	if pa.cancelled {
+		return false
+	}
+	pa.OnAction(sim)
+	return false
 }
 
 func (sim *Simulation) AddPendingAction(pa *PendingAction) {

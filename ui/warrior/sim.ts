@@ -81,7 +81,7 @@ export class WarriorSimUI extends IndividualSimUI<Spec.SpecWarrior> {
 
 			defaults: {
 				// Default equipped gear.
-				gear: Presets.P1_FURY_PRESET.gear,
+				gear: Presets.P2_FURY_PRESET.gear,
 				// Default EP weights for sorting gear in the gear picker.
 				epWeights: Stats.fromMap({
 					[Stat.StatStrength]: 2.72,
@@ -153,6 +153,7 @@ export class WarriorSimUI extends IndividualSimUI<Spec.SpecWarrior> {
 				inputs: [
 					WarriorInputs.StartingRage,
 					WarriorInputs.Munch,
+					WarriorInputs.StanceSnapshot,
 					OtherInputs.TankAssignment,
 					OtherInputs.InFrontOfTarget,
 				],
@@ -172,8 +173,10 @@ export class WarriorSimUI extends IndividualSimUI<Spec.SpecWarrior> {
 				gear: [
 					Presets.P1_PRERAID_FURY_PRESET,
 					Presets.P1_FURY_PRESET,
+					Presets.P2_FURY_PRESET,
 					Presets.P1_PRERAID_ARMS_PRESET,
 					Presets.P1_ARMS_PRESET,
+					Presets.P2_ARMS_PRESET,
 				],
 			},
 		});

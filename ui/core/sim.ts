@@ -1,4 +1,4 @@
-import { ArmorType } from './proto/common.js';
+import { ArmorType, SimDatabase } from './proto/common.js';
 import { Class, Faction } from './proto/common.js';
 import { Consumes } from './proto/common.js';
 import { Encounter as EncounterProto } from './proto/common.js';
@@ -13,8 +13,8 @@ import { Race } from './proto/common.js';
 import { RaidTarget } from './proto/common.js';
 import { Spec } from './proto/common.js';
 import { Stat, PseudoStat } from './proto/common.js';
-import { WeaponType } from './proto/common.js';
-import { Raid as RaidProto } from './proto/api.js';
+import { RangedWeaponType, WeaponType } from './proto/common.js';
+import { BulkSimRequest, BulkSimResult, BulkSettings, Raid as RaidProto } from './proto/api.js';
 import { ComputeStatsRequest, ComputeStatsResult } from './proto/api.js';
 import { RaidSimRequest, RaidSimResult } from './proto/api.js';
 import { SimOptions } from './proto/api.js';
@@ -22,6 +22,8 @@ import { StatWeightsRequest, StatWeightsResult } from './proto/api.js';
 import {
 	DatabaseFilters,
 	SimSettings as SimSettingsProto,
+	SourceFilterOption,
+	RaidFilterOption,
 } from './proto/ui.js';
 import {
 	UIEnchant as Enchant,
@@ -108,6 +110,11 @@ export class Sim {
 
 	// Fires when a raid sim API call completes.
 	readonly simResultEmitter = new TypedEvent<SimResult>();
+
+	// Fires when a bulk sim API call starts.
+	readonly bulkSimStartEmitter = new TypedEvent<BulkSimRequest>();
+	// Fires when a bulk sim API call completes..
+	readonly bulkSimResultEmitter = new TypedEvent<BulkSimResult>();
 
 	private readonly _initPromise: Promise<any>;
 	private lastUsedRngSeed: number = 0;
@@ -210,7 +217,46 @@ export class Sim {
 		});
 	}
 
-	async runRaidSim(eventID: EventID, onProgress: Function) {
+	async runBulkSim(bulkSettings: BulkSettings, bulkItemsDb: SimDatabase, onProgress: Function): Promise<BulkSimResult> {
+		if (this.raid.isEmpty()) {
+			throw new Error('Raid is empty! Try adding some players first.');
+		} else if (this.encounter.getNumTargets() < 1) {
+			throw new Error('Encounter has no targets! Try adding some targets first.');
+		}
+
+		await this.waitForInit();
+
+		const request = BulkSimRequest.create({
+			baseSettings: this.makeRaidSimRequest(false),
+			bulkSettings: bulkSettings,
+		});
+
+		if (request.baseSettings != null && request.baseSettings.simOptions != null) {
+			request.baseSettings.simOptions.debugFirstIteration = false;
+		}
+
+		if (!request.baseSettings?.raid || request.baseSettings?.raid?.parties.length == 0 || request.baseSettings?.raid?.parties[0].players.length == 0) {
+			throw new Error('Raid must contain exactly 1 player for bulk sim.');
+		}
+
+		// Attach the extra database to the player.
+		const playerDatabase = request.baseSettings.raid.parties[0].players[0].database;
+		playerDatabase?.items.push(...bulkItemsDb.items);
+		playerDatabase?.enchants.push(...bulkItemsDb.enchants);
+		playerDatabase?.gems.push(...bulkItemsDb.gems);
+
+		this.bulkSimStartEmitter.emit(TypedEvent.nextEventID(), request);
+		
+		var result = await this.workerPool.bulkSimAsync(request, onProgress);
+		if (result.errorResult != "") {
+			throw new SimError(result.errorResult);
+		}
+
+		this.bulkSimResultEmitter.emit(TypedEvent.nextEventID(), result);
+		return result;
+	}
+
+	async runRaidSim(eventID: EventID, onProgress: Function): Promise<SimResult> {
 		if (this.raid.isEmpty()) {
 			throw new Error('Raid is empty! Try adding some players first.');
 		} else if (this.encounter.getNumTargets() < 1) {
@@ -227,6 +273,7 @@ export class Sim {
 		}
 		const simResult = await SimResult.makeNew(request, result);
 		this.simResultEmitter.emit(eventID, simResult);
+		return simResult;
 	}
 
 	async runRaidSimWithLogs(eventID: EventID): Promise<SimResult> {
@@ -439,8 +486,11 @@ export class Sim {
 		}
 	}
 
-	private static readonly ALL_ARMOR_TYPES = (getEnumValues(ArmorType) as Array<ArmorType>).filter(v => v != 0);
-	private static readonly ALL_WEAPON_TYPES = (getEnumValues(WeaponType) as Array<WeaponType>).filter(v => v != 0);
+	static readonly ALL_ARMOR_TYPES = (getEnumValues(ArmorType) as Array<ArmorType>).filter(v => v != 0);
+	static readonly ALL_WEAPON_TYPES = (getEnumValues(WeaponType) as Array<WeaponType>).filter(v => v != 0);
+	static readonly ALL_RANGED_WEAPON_TYPES = (getEnumValues(RangedWeaponType) as Array<RangedWeaponType>).filter(v => v != 0);
+	static readonly ALL_SOURCES = (getEnumValues(SourceFilterOption) as Array<SourceFilterOption>).filter(v => v != 0);
+	static readonly ALL_RAIDS = (getEnumValues(RaidFilterOption) as Array<RaidFilterOption>).filter(v => v != 0);
 
 	toProto(): SimSettingsProto {
 		const filters = this.getFilters();
@@ -449,6 +499,15 @@ export class Sim {
 		}
 		if (filters.weaponTypes.length == Sim.ALL_WEAPON_TYPES.length) {
 			filters.weaponTypes = [];
+		}
+		if (filters.rangedWeaponTypes.length == Sim.ALL_RANGED_WEAPON_TYPES.length) {
+			filters.rangedWeaponTypes = [];
+		}
+		if (filters.sources.length == Sim.ALL_SOURCES.length) {
+			filters.sources = [];
+		}
+		if (filters.raids.length == Sim.ALL_RAIDS.length) {
+			filters.raids = [];
 		}
 
 		return SimSettingsProto.create({
@@ -483,6 +542,15 @@ export class Sim {
 			}
 			if (filters.weaponTypes.length == 0) {
 				filters.weaponTypes = Sim.ALL_WEAPON_TYPES.slice();
+			}
+			if (filters.rangedWeaponTypes.length == 0) {
+				filters.rangedWeaponTypes = Sim.ALL_RANGED_WEAPON_TYPES.slice();
+			}
+			if (filters.sources.length == 0) {
+				filters.sources = Sim.ALL_SOURCES.slice();
+			}
+			if (filters.raids.length == 0) {
+				filters.raids = Sim.ALL_RAIDS.slice();
 			}
 			this.setFilters(eventID, filters);
 		});

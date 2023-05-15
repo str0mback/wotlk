@@ -3,6 +3,7 @@ package dps
 import (
 	"time"
 
+	"github.com/wowsims/wotlk/sim/common"
 	"github.com/wowsims/wotlk/sim/core"
 	"github.com/wowsims/wotlk/sim/core/proto"
 	"github.com/wowsims/wotlk/sim/warrior"
@@ -28,8 +29,9 @@ func RegisterDpsWarrior() {
 type DpsWarrior struct {
 	*warrior.Warrior
 
-	Options  *proto.Warrior_Options
-	Rotation *proto.Warrior_Rotation
+	Options        *proto.Warrior_Options
+	Rotation       *proto.Warrior_Rotation
+	CustomRotation *common.CustomRotation
 
 	// Prevent swapping stances until this time, to account for human reaction time.
 	canSwapStanceAt time.Duration
@@ -45,9 +47,11 @@ func NewDpsWarrior(character core.Character, options *proto.Player) *DpsWarrior 
 
 	war := &DpsWarrior{
 		Warrior: warrior.NewWarrior(character, options.TalentsString, warrior.WarriorInputs{
-			ShoutType:       warOptions.Options.Shout,
-			RendCdThreshold: core.DurationFromSeconds(warOptions.Rotation.RendCdThreshold),
-			Munch:           warOptions.Options.Munch,
+			ShoutType:                   warOptions.Options.Shout,
+			RendCdThreshold:             core.DurationFromSeconds(warOptions.Rotation.RendCdThreshold),
+			BloodsurgeDurationThreshold: core.DurationFromSeconds(warOptions.Rotation.BloodsurgeDurationThreshold),
+			Munch:                       warOptions.Options.Munch,
+			StanceSnapshot:              warOptions.Options.StanceSnapshot,
 		}),
 		Rotation: warOptions.Rotation,
 		Options:  warOptions.Options,
@@ -68,10 +72,17 @@ func NewDpsWarrior(character core.Character, options *proto.Player) *DpsWarrior 
 		if war.GCD.IsReady(sim) {
 			war.TryUseCooldowns(sim)
 			if war.GCD.IsReady(sim) {
-				war.doRotation(sim)
+				// Pause rotation until after AM ticks to detect procs that happened right after the ticks
+				if war.LastAMTick == sim.CurrentTime {
+					war.WaitUntil(sim, sim.CurrentTime+time.Microsecond*1)
+					core.StartDelayedAction(sim, core.DelayedActionOptions{
+						DoAt:     sim.CurrentTime + time.Microsecond*1,
+						OnAction: war.doRotation,
+					})
+				} else {
+					war.doRotation(sim)
+				}
 			}
-		} else if !war.thunderClapNext && war.PrimaryTalentTree == warrior.FuryTree {
-			war.trySwapToBerserker(sim)
 		}
 	})
 	war.EnableAutoAttacks(war, core.AutoAttackOptions{
@@ -95,6 +106,7 @@ func (war *DpsWarrior) Initialize() {
 
 	war.RegisterHSOrCleave(war.Rotation.UseCleave, war.Rotation.HsRageThreshold)
 	war.RegisterRendSpell(war.Rotation.RendRageThresholdBelow, war.Rotation.RendHealthThresholdAbove)
+	war.CustomRotation = war.makeCustomRotation()
 
 	if war.Options.UseRecklessness {
 		war.RegisterRecklessnessCD()
@@ -107,9 +119,9 @@ func (war *DpsWarrior) Initialize() {
 	// This makes the behavior of these options more intuitive in the individual sim.
 	if war.Env.Raid.Size() == 1 {
 		if war.Rotation.SunderArmor == proto.Warrior_Rotation_SunderArmorHelpStack {
-			war.SunderArmorAura.Duration = core.NeverExpires
+			war.SunderArmorAuras.Get(war.CurrentTarget).Duration = core.NeverExpires
 		} else if war.Rotation.SunderArmor == proto.Warrior_Rotation_SunderArmorMaintain {
-			war.SunderArmorAura.Duration = time.Second * 30
+			war.SunderArmorAuras.Get(war.CurrentTarget).Duration = time.Second * 30
 		}
 	}
 

@@ -58,17 +58,8 @@ type Priest struct {
 	VampiricTouch   *core.Spell
 	Dispersion      *core.Spell
 
-	ShadowWordPainDot  *core.Dot
-	DevouringPlagueDot *core.Dot
-	HolyFireDot        *core.Dot
-	MindFlayDot        []*core.Dot
-	MindSearDot        []*core.Dot
-	StarshardsDot      *core.Dot
-	VampiricTouchDot   *core.Dot
-
-	RenewHots     []*core.Dot
 	PWSShields    []*core.Shield
-	WeakenedSouls []*core.Aura
+	WeakenedSouls core.AuraArray
 
 	ProcPrayerOfMending core.ApplySpellResults
 
@@ -151,12 +142,6 @@ func (priest *Priest) Initialize() {
 		priest.newMindFlaySpell(2),
 		priest.newMindFlaySpell(3),
 	}
-	priest.MindFlayDot = []*core.Dot{
-		nil, // So we can use # of ticks as the index
-		priest.newMindFlayDot(1),
-		priest.newMindFlayDot(2),
-		priest.newMindFlayDot(3),
-	}
 	priest.MindSear = []*core.Spell{
 		nil, // So we can use # of ticks as the index
 		priest.newMindSearSpell(1),
@@ -164,14 +149,6 @@ func (priest *Priest) Initialize() {
 		priest.newMindSearSpell(3),
 		priest.newMindSearSpell(4),
 		priest.newMindSearSpell(5),
-	}
-	priest.MindSearDot = []*core.Dot{
-		nil, // So we can use # of ticks as the index
-		priest.newMindSearDot(1),
-		priest.newMindSearDot(2),
-		priest.newMindSearDot(3),
-		priest.newMindSearDot(4),
-		priest.newMindSearDot(5),
 	}
 }
 
@@ -263,31 +240,31 @@ func init() {
 	core.BaseStats[core.BaseStatsKey{Race: proto.Race_RaceUndead, Class: proto.Class_ClassPriest}] = stats.Stats{
 		stats.Health:    6960,
 		stats.Mana:      3863,
-		stats.Strength:  38,
-		stats.Agility:   43,
-		stats.Stamina:   59,
-		stats.Intellect: 143,
-		stats.Spirit:    156,
+		stats.Strength:  42,
+		stats.Agility:   49,
+		stats.Stamina:   67,
+		stats.Intellect: 172,
+		stats.Spirit:    186,
 		stats.SpellCrit: core.CritRatingPerCritChance * 1.24,
 	}
 	core.BaseStats[core.BaseStatsKey{Race: proto.Race_RaceTroll, Class: proto.Class_ClassPriest}] = stats.Stats{
 		stats.Health:    6960,
 		stats.Mana:      3863,
-		stats.Strength:  40,
-		stats.Agility:   47,
-		stats.Stamina:   59,
-		stats.Intellect: 141,
-		stats.Spirit:    152,
+		stats.Strength:  44,
+		stats.Agility:   53,
+		stats.Stamina:   67,
+		stats.Intellect: 170,
+		stats.Spirit:    182,
 		stats.SpellCrit: core.CritRatingPerCritChance * 1.24,
 	}
 	core.BaseStats[core.BaseStatsKey{Race: proto.Race_RaceBloodElf, Class: proto.Class_ClassPriest}] = stats.Stats{
 		stats.Health:    6960,
 		stats.Mana:      3863,
-		stats.Strength:  36,
-		stats.Agility:   47,
-		stats.Stamina:   57,
-		stats.Intellect: 149,
-		stats.Spirit:    150,
+		stats.Strength:  40,
+		stats.Agility:   53,
+		stats.Stamina:   67,
+		stats.Intellect: 177,
+		stats.Spirit:    179,
 		stats.SpellCrit: core.CritRatingPerCritChance * 1.24,
 	}
 }

@@ -16,9 +16,7 @@ import { emptyRaidTarget } from '../proto_utils/utils.js';
 
 export function makeShow1hWeaponsSelector(parent: HTMLElement, sim: Sim): BooleanPicker<Sim> {
 	return new BooleanPicker<Sim>(parent, sim, {
-		extraCssClasses: [
-			'show-1h-weapons-selector', 'mb-0'
-		],
+		extraCssClasses: ['show-1h-weapons-selector', 'mb-0'],
 		label: '1H',
 		inline: true,
 		changedEvent: (sim: Sim) => sim.filtersChangeEmitter,
@@ -33,9 +31,7 @@ export function makeShow1hWeaponsSelector(parent: HTMLElement, sim: Sim): Boolea
 
 export function makeShow2hWeaponsSelector(parent: HTMLElement, sim: Sim): BooleanPicker<Sim> {
 	return new BooleanPicker<Sim>(parent, sim, {
-		extraCssClasses: [
-			'show-2h-weapons-selector', 'mb-0'
-		],
+		extraCssClasses: ['show-2h-weapons-selector', 'mb-0'],
 		label: '2H',
 		inline: true,
 		changedEvent: (sim: Sim) => sim.filtersChangeEmitter,
@@ -50,10 +46,9 @@ export function makeShow2hWeaponsSelector(parent: HTMLElement, sim: Sim): Boolea
 
 export function makeShowMatchingGemsSelector(parent: HTMLElement, sim: Sim): BooleanPicker<Sim> {
 	return new BooleanPicker<Sim>(parent, sim, {
-		extraCssClasses: [
-			'show-matching-gems-selector',
-		],
+		extraCssClasses: ['show-matching-gems-selector', 'input-inline', 'mb-0'],
 		label: 'Match Socket',
+		inline: true,
 		changedEvent: (sim: Sim) => sim.filtersChangeEmitter,
 		getValue: (sim: Sim) => sim.getFilters().matchingGemsOnly,
 		setValue: (eventID: EventID, sim: Sim, newValue: boolean) => {
@@ -66,9 +61,7 @@ export function makeShowMatchingGemsSelector(parent: HTMLElement, sim: Sim): Boo
 
 export function makePhaseSelector(parent: HTMLElement, sim: Sim): EnumPicker<Sim> {
 	return new EnumPicker<Sim>(parent, sim, {
-		extraCssClasses: [
-			'phase-selector',
-		],
+		extraCssClasses: ['phase-selector'],
 		values: [
 			{ name: 'Phase 1', value: 1 },
 			{ name: 'Phase 2', value: 2 },
@@ -83,39 +76,6 @@ export function makePhaseSelector(parent: HTMLElement, sim: Sim): EnumPicker<Sim
 		},
 	});
 }
-
-export const StartingConjured = {
-	type: 'enum' as const,
-	label: 'Starting Conjured',
-	labelTooltip: 'If set, this conjured will be used instead of the default conjured for the first few uses.',
-	values: [
-		{ name: 'None', value: Conjured.ConjuredUnknown },
-		{ name: 'Dark Rune', value: Conjured.ConjuredDarkRune },
-		{ name: 'Flame Cap', value: Conjured.ConjuredFlameCap },
-		{ name: 'Thistle Tea', value: Conjured.ConjuredRogueThistleTea },
-	],
-	changedEvent: (player: Player<any>) => player.consumesChangeEmitter,
-	getValue: (player: Player<any>) => player.getConsumes().startingConjured,
-	setValue: (eventID: EventID, player: Player<any>, newValue: number) => {
-		const newConsumes = player.getConsumes();
-		newConsumes.startingConjured = newValue;
-		player.setConsumes(eventID, newConsumes);
-	},
-};
-
-export const NumStartingConjured = {
-	type: 'number' as const,
-	label: '# to use',
-	labelTooltip: 'The number of starting conjured items to use before going back to the default conjured.',
-	changedEvent: (player: Player<any>) => player.consumesChangeEmitter,
-	getValue: (player: Player<any>) => player.getConsumes().numStartingConjured,
-	setValue: (eventID: EventID, player: Player<any>, newValue: number) => {
-		const newConsumes = player.getConsumes();
-		newConsumes.numStartingConjured = newValue;
-		player.setConsumes(eventID, newConsumes);
-	},
-	enableWhen: (player: Player<any>) => player.getConsumes().startingConjured != Conjured.ConjuredUnknown,
-};
 
 export const InFrontOfTarget = {
 	type: 'boolean' as const,
@@ -174,7 +134,7 @@ export const IncomingHps = {
 	label: 'Incoming HPS',
 	labelTooltip: `
 		<p>Average amount of healing received per second. Used for calculating chance of death.</p>
-		<p>If set to 0, defaults to 150% of DTPS.</p>
+		<p>If set to 0, defaults to 17.5% of the primary target's base DPS.</p>
 	`,
 	changedEvent: (player: Player<any>) => player.getRaid()!.changeEmitter,
 	getValue: (player: Player<any>) => player.getHealingModel().hps,
@@ -193,7 +153,7 @@ export const HealingCadence = {
 	labelTooltip: `
 		<p>How often the incoming heal 'ticks', in seconds. Generally, longer durations favor Effective Hit Points (EHP) for minimizing Chance of Death, while shorter durations favor avoidance.</p>
 		<p>Example: if Incoming HPS is set to 1000 and this is set to 1s, then every 1s a heal will be received for 1000. If this is instead set to 2s, then every 2s a heal will be recieved for 2000.</p>
-		<p>If set to 0, defaults to 2.0 seconds.</p>
+		<p>If set to 0, defaults to 1.5 times the primary target's base swing timer, and half that for dual wielding targets.</p>
 	`,
 	changedEvent: (player: Player<any>) => player.getRaid()!.changeEmitter,
 	getValue: (player: Player<any>) => player.getHealingModel().cadenceSeconds,

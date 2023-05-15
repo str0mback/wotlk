@@ -11,31 +11,32 @@ import (
 func (ret *RetributionPaladin) OnAutoAttack(sim *core.Simulation, spell *core.Spell) {
 	if ret.SealOfVengeanceAura.IsActive() && core.MinInt32(ret.MaxSoVTargets, ret.Env.GetNumTargets()) > 1 {
 		minVengeanceDotDuration := time.Second * 15
-		minVengeanceDotDurationTargetIndex := int32(0)
+		var minVengeanceDotDurationTarget *core.Unit
 		minVengeanceDotStacks := int32(5)
-		minVengeanceDotStacksTargetIndex := int32(0)
+		var minVengeanceDotStacksTarget *core.Unit
 		for i := int32(0); i < core.MinInt32(ret.MaxSoVTargets, ret.Env.GetNumTargets()); i++ {
-			dot := ret.SealOfVengeanceDots[i]
+			target := ret.Env.GetTargetUnit(i)
+			dot := ret.SovDotSpell.Dot(target)
 			remainingDuration := dot.RemainingDuration(sim)
 			stackCount := dot.GetStacks()
 
 			if remainingDuration < minVengeanceDotDuration && remainingDuration > 0 {
 				minVengeanceDotDuration = remainingDuration
-				minVengeanceDotDurationTargetIndex = i
+				minVengeanceDotDurationTarget = target
 			}
 
 			if stackCount < minVengeanceDotStacks {
 				minVengeanceDotStacks = stackCount
-				minVengeanceDotStacksTargetIndex = i
+				minVengeanceDotStacksTarget = target
 			}
 		}
 
 		if minVengeanceDotDuration < ret.WeaponFromMainHand(0).SwingDuration*2 {
-			ret.CurrentTarget = &ret.Env.Encounter.Targets[minVengeanceDotDurationTargetIndex].Unit
-		} else if ret.SealOfVengeanceDots[ret.CurrentTarget.Index].GetStacks() == 5 && minVengeanceDotStacks < 5 {
-			ret.CurrentTarget = &ret.Env.Encounter.Targets[minVengeanceDotStacksTargetIndex].Unit
+			ret.CurrentTarget = minVengeanceDotDurationTarget
+		} else if ret.SovDotSpell.Dot(ret.CurrentTarget).GetStacks() == 5 && minVengeanceDotStacks < 5 {
+			ret.CurrentTarget = minVengeanceDotStacksTarget
 		} else {
-			ret.CurrentTarget = &ret.Env.Encounter.Targets[0].Unit
+			ret.CurrentTarget = ret.Env.Encounter.TargetUnits[0]
 		}
 	}
 }
@@ -50,10 +51,14 @@ func (ret *RetributionPaladin) OnGCDReady(sim *core.Simulation) {
 
 func (ret *RetributionPaladin) customRotation(sim *core.Simulation) {
 	// Setup
-	target := &ret.Env.Encounter.Targets[0].Unit
+	target := ret.Env.Encounter.TargetUnits[0]
 
 	nextSwingAt := ret.AutoAttacks.NextAttackAt()
 	isExecutePhase := sim.IsExecutePhase20()
+
+	if ret.HandOfReckoning != nil && ret.HandOfReckoning.IsReady(sim) {
+		ret.HandOfReckoning.Cast(sim, ret.CurrentTarget)
+	}
 
 	if ret.GCD.IsReady(sim) {
 	rotationLoop:
@@ -108,6 +113,10 @@ func (ret *RetributionPaladin) customRotation(sim *core.Simulation) {
 		ret.DivinePlea.CD.ReadyAt(),
 	}
 
+	if ret.HandOfReckoning != nil {
+		events = append(events, ret.HandOfReckoning.CD.ReadyAt())
+	}
+
 	ret.waitUntilNextEvent(sim, events, ret.customRotation)
 
 }
@@ -118,10 +127,15 @@ func (ret *RetributionPaladin) castSequenceRotation(sim *core.Simulation) {
 	}
 
 	// Setup
-	target := &ret.Env.Encounter.Targets[0].Unit
+	target := ret.Env.Encounter.TargetUnits[0]
 	isExecutePhase := sim.IsExecutePhase20()
 
 	nextReadyAt := sim.CurrentTime
+
+	if hc := ret.Hardcast; ret.HandOfReckoning != nil && ret.HandOfReckoning.IsReady(sim) && !(hc.Expires > sim.CurrentTime) {
+		ret.HandOfReckoning.Cast(sim, ret.CurrentTarget)
+	}
+
 	if ret.GCD.IsReady(sim) {
 		if ret.UseDivinePlea && ret.DivinePlea.IsReady(sim) && ret.CurrentMana() < (ret.MaxMana()*ret.DivinePleaPercentage) {
 			ret.DivinePlea.Cast(sim, nil)
@@ -150,13 +164,17 @@ func (ret *RetributionPaladin) castSequenceRotation(sim *core.Simulation) {
 		nextReadyAt,
 	}
 
+	if ret.HandOfReckoning != nil {
+		events = append(events, ret.HandOfReckoning.CD.ReadyAt())
+	}
+
 	ret.waitUntilNextEvent(sim, events, ret.castSequenceRotation)
 }
 
 func (ret *RetributionPaladin) mainRotation(sim *core.Simulation) {
 
 	// Setup
-	target := &ret.Env.Encounter.Targets[0].Unit
+	target := ret.Env.Encounter.TargetUnits[0]
 
 	nextSwingAt := ret.AutoAttacks.NextAttackAt()
 	isExecutePhase := sim.IsExecutePhase20()
@@ -164,6 +182,10 @@ func (ret *RetributionPaladin) mainRotation(sim *core.Simulation) {
 	nextPrimaryAbility := core.MinDuration(ret.CrusaderStrike.CD.ReadyAt(), ret.DivineStorm.CD.ReadyAt())
 	nextPrimaryAbility = core.MinDuration(nextPrimaryAbility, ret.SelectedJudgement.CD.ReadyAt())
 	nextPrimaryAbilityDelta := nextPrimaryAbility - sim.CurrentTime
+
+	if ret.HandOfReckoning != nil && ret.HandOfReckoning.IsReady(sim) {
+		ret.HandOfReckoning.Cast(sim, ret.CurrentTarget)
+	}
 
 	if ret.GCD.IsReady(sim) {
 		switch {
@@ -254,12 +276,17 @@ func (ret *RetributionPaladin) mainRotation(sim *core.Simulation) {
 		ret.DivinePlea.CD.ReadyAt(),
 	}
 
+	if ret.HandOfReckoning != nil {
+		events = append(events, ret.HandOfReckoning.CD.ReadyAt())
+	}
+
 	ret.waitUntilNextEvent(sim, events, ret.mainRotation)
 }
 
 func (ret *RetributionPaladin) checkConsecrationClipping(sim *core.Simulation) bool {
 	if ret.AvoidClippingConsecration {
-		return ((ret.ConsecrationDot.TickLength * 4) + sim.CurrentTime) <= sim.Duration
+		// TODO: sim.Duration is the wrong value to check
+		return sim.CurrentTime+ret.Consecration.AOEDot().TickLength*4 <= sim.Duration
 	} else {
 		// If we're not configured to check, always return success.
 		return true

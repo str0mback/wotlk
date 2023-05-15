@@ -16,7 +16,7 @@ func (bear *FeralTankDruid) OnAutoAttack(sim *core.Simulation, spell *core.Spell
 
 func (bear *FeralTankDruid) doRotation(sim *core.Simulation) {
 	if bear.GCD.IsReady(sim) {
-		if bear.shouldSaveLacerateStacks(sim) && bear.CanLacerate(sim) {
+		if bear.shouldSaveLacerateStacks(sim) && bear.Lacerate.CanCast(sim, bear.CurrentTarget) {
 			bear.Lacerate.Cast(sim, bear.CurrentTarget)
 		} else if bear.shouldDemoRoar(sim) {
 			bear.DemoralizingRoar.Cast(sim, bear.CurrentTarget)
@@ -32,7 +32,7 @@ func (bear *FeralTankDruid) doRotation(sim *core.Simulation) {
 			}
 
 			bear.UpdateMajorCooldowns()
-		} else if bear.CanMangleBear(sim) {
+		} else if bear.MangleBear.CanCast(sim, bear.CurrentTarget) {
 			bear.MangleBear.Cast(sim, bear.CurrentTarget)
 		} else if bear.shouldFaerieFire(sim) {
 			bear.FaerieFire.Cast(sim, bear.CurrentTarget)
@@ -67,12 +67,13 @@ func (bear *FeralTankDruid) doRotation(sim *core.Simulation) {
 }
 
 func (bear *FeralTankDruid) shouldSaveLacerateStacks(sim *core.Simulation) bool {
-	return bear.LacerateDot.GetStacks() == 5 &&
-		bear.LacerateDot.RemainingDuration(sim) <= time.Millisecond*1500
+	lacerateDot := bear.Lacerate.CurDot()
+	return lacerateDot.GetStacks() == 5 &&
+		lacerateDot.RemainingDuration(sim) <= time.Millisecond*1500
 }
 
 func (bear *FeralTankDruid) shouldSwipe(sim *core.Simulation) bool {
-	return bear.CanSwipeBear() &&
+	return bear.SwipeBear.CanCast(sim, bear.CurrentTarget) &&
 		((bear.MangleBear == nil) || (bear.MangleBear.ReadyAt() >= sim.CurrentTime+core.GCDDefault)) &&
 		bear.CurrentRage()-bear.SwipeBear.DefaultCast.Cost >= bear.MaulRageThreshold
 }
@@ -92,5 +93,6 @@ func (bear *FeralTankDruid) shouldFaerieFire(sim *core.Simulation) bool {
 }
 
 func (bear *FeralTankDruid) shouldLacerate(sim *core.Simulation) bool {
-	return bear.CanLacerate(sim) && ((bear.MangleBear == nil) || (bear.MangleBear.ReadyAt() >= sim.CurrentTime+core.GCDDefault)) && ((bear.LacerateDot.GetStacks() < 5) || (bear.LacerateDot.RemainingDuration(sim) <= time.Duration(bear.Rotation.LacerateTime*float64(time.Second))))
+	lacerateDot := bear.Lacerate.CurDot()
+	return bear.Lacerate.CanCast(sim, bear.CurrentTarget) && ((bear.MangleBear == nil) || (bear.MangleBear.ReadyAt() >= sim.CurrentTime+core.GCDDefault)) && ((lacerateDot.GetStacks() < 5) || (lacerateDot.RemainingDuration(sim) <= time.Duration(bear.Rotation.LacerateTime*float64(time.Second))))
 }

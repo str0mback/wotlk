@@ -10,8 +10,10 @@ import (
 func (mage *Mage) registerScorchSpell() {
 	hasImpScorch := mage.Talents.ImprovedScorch > 0
 	procChance := float64(mage.Talents.ImprovedScorch) / 3.0
+
 	if hasImpScorch {
-		mage.ScorchAura = core.ImprovedScorchAura(mage.CurrentTarget)
+		mage.ScorchAuras = mage.NewEnemyAuraArray(core.ImprovedScorchAura)
+		mage.CritDebuffCategories = mage.GetEnemyExclusiveCategories(core.SpellCritEffectCategory)
 	}
 
 	mage.Scorch = mage.RegisterSpell(core.SpellConfig{
@@ -43,10 +45,8 @@ func (mage *Mage) registerScorchSpell() {
 		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
 			baseDamage := sim.Roll(382, 451) + (1.5/3.5)*spell.SpellPower()
 			result := spell.CalcDamage(sim, target, baseDamage, spell.OutcomeMagicHitAndCrit)
-			if hasImpScorch && result.Landed() {
-				if sim.Proc(procChance, "Improved Scorch") {
-					mage.ScorchAura.Activate(sim)
-				}
+			if hasImpScorch && result.Landed() && sim.Proc(procChance, "Improved Scorch") {
+				mage.ScorchAuras.Get(target).Activate(sim)
 			}
 			spell.DealDamage(sim, result)
 		},

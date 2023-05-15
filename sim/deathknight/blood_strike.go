@@ -2,28 +2,39 @@ package deathknight
 
 import (
 	"github.com/wowsims/wotlk/sim/core"
-	"github.com/wowsims/wotlk/sim/core/stats"
 )
 
 var BloodStrikeActionID = core.ActionID{SpellID: 49930}
 
-func (dk *Deathknight) newBloodStrikeSpell(isMH bool) *RuneSpell {
+func (dk *Deathknight) newBloodStrikeSpell(isMH bool) *core.Spell {
 	bonusBaseDamage := dk.sigilOfTheDarkRiderBonus()
 	diseaseMulti := dk.dkDiseaseMultiplier(0.125)
+	deathConvertChance := float64(dk.Talents.BloodOfTheNorth+dk.Talents.Reaping) / 3
 
-	rs := &RuneSpell{}
 	conf := core.SpellConfig{
 		ActionID:    BloodStrikeActionID.WithTag(core.TernaryInt32(isMH, 1, 2)),
 		SpellSchool: core.SpellSchoolPhysical,
 		ProcMask:    dk.threatOfThassarianProcMask(isMH),
 		Flags:       core.SpellFlagMeleeMetrics | core.SpellFlagIncludeTargetBonusDamage,
 
+		RuneCost: core.RuneCostOptions{
+			BloodRuneCost:  1,
+			RunicPowerGain: 10,
+			Refundable:     true,
+		},
+		Cast: core.CastConfig{
+			DefaultCast: core.Cast{
+				GCD: core.GCDDefault,
+			},
+			IgnoreHaste: true,
+		},
+
 		BonusCritRating: (dk.subversionCritBonus() + dk.annihilationCritBonus()) * core.CritRatingPerCritChance,
 		DamageMultiplier: 0.4 *
 			core.TernaryFloat64(isMH, 1, dk.nervesOfColdSteelBonus()) *
 			dk.bloodOfTheNorthCoeff() *
 			dk.thassariansPlateDamageBonus() *
-			dk.bloodyStrikesBonus(dk.BloodStrike),
+			dk.bloodyStrikesBonus(BloodyStrikesBS),
 		CritMultiplier:   dk.bonusCritMultiplier(dk.Talents.MightOfMograine + dk.Talents.GuileOfGorefiend),
 		ThreatMultiplier: 1,
 
@@ -47,7 +58,7 @@ func (dk *Deathknight) newBloodStrikeSpell(isMH bool) *RuneSpell {
 			result := spell.CalcDamage(sim, target, baseDamage, dk.threatOfThassarianOutcomeApplier(spell))
 
 			if isMH {
-				rs.OnResult(sim, result)
+				spell.SpendRefundableCostAndConvertBloodRune(sim, result, deathConvertChance)
 				dk.threatOfThassarianProc(sim, result, dk.BloodStrikeOhHit)
 				dk.LastOutcome = result.Outcome
 
@@ -62,39 +73,50 @@ func (dk *Deathknight) newBloodStrikeSpell(isMH bool) *RuneSpell {
 		},
 	}
 
-	if isMH { // offhand doesn't need GCD
-		conf.ResourceType = stats.RunicPower
-		conf.BaseCost = float64(core.NewRuneCost(10, 1, 0, 0, 0))
-		conf.Cast = core.CastConfig{
-			DefaultCast: core.Cast{
-				GCD:  core.GCDDefault,
-				Cost: conf.BaseCost,
-			},
-			ModifyCast: func(sim *core.Simulation, spell *core.Spell, cast *core.Cast) {
-				cast.GCD = dk.GetModifiedGCD()
-			},
-			IgnoreHaste: true,
-		}
-		rs.Refundable = true
-		rs.ConvertType = RuneTypeBlood
-		if dk.Talents.BloodOfTheNorth+dk.Talents.Reaping >= 3 {
-			rs.DeathConvertChance = 1.0
-		} else {
-			rs.DeathConvertChance = float64(dk.Talents.BloodOfTheNorth+dk.Talents.Reaping) * 0.33
-		}
+	if !isMH { // offhand doesn't need GCD
+		conf.RuneCost = core.RuneCostOptions{}
+		conf.Cast = core.CastConfig{}
 	}
 
-	if isMH {
-		return dk.RegisterSpell(rs, conf, func(sim *core.Simulation) bool {
-			return dk.CastCostPossible(sim, 0.0, 1, 0, 0) && dk.BloodStrike.IsReady(sim)
-		}, nil)
-	} else {
-		return dk.RegisterSpell(rs, conf, nil, nil)
-	}
+	return dk.RegisterSpell(conf)
 }
 
 func (dk *Deathknight) registerBloodStrikeSpell() {
 	dk.BloodStrikeMhHit = dk.newBloodStrikeSpell(true)
 	dk.BloodStrikeOhHit = dk.newBloodStrikeSpell(false)
 	dk.BloodStrike = dk.BloodStrikeMhHit
+}
+
+func (dk *Deathknight) registerDrwBloodStrikeSpell() {
+	bonusBaseDamage := dk.sigilOfTheDarkRiderBonus()
+	diseaseMulti := dk.dkDiseaseMultiplier(0.125)
+
+	dk.RuneWeapon.BloodStrike = dk.RuneWeapon.RegisterSpell(core.SpellConfig{
+		ActionID:    BloodStrikeActionID.WithTag(1),
+		SpellSchool: core.SpellSchoolPhysical,
+		ProcMask:    core.ProcMaskMeleeSpecial,
+		Flags:       core.SpellFlagMeleeMetrics | core.SpellFlagIncludeTargetBonusDamage,
+
+		BonusCritRating: (dk.subversionCritBonus() + dk.annihilationCritBonus()) * core.CritRatingPerCritChance,
+		DamageMultiplier: 0.4 *
+			dk.bloodOfTheNorthCoeff() *
+			dk.thassariansPlateDamageBonus() *
+			dk.bloodyStrikesBonus(BloodyStrikesBS),
+		CritMultiplier:   dk.bonusCritMultiplier(dk.Talents.MightOfMograine + dk.Talents.GuileOfGorefiend),
+		ThreatMultiplier: 1,
+
+		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
+			baseDamage := 764 + bonusBaseDamage + dk.DrwWeaponDamage(sim, spell)
+
+			baseDamage *= dk.RoRTSBonus(target) *
+				(1.0 + dk.drwCountActiveDiseases(target)*diseaseMulti)
+
+			spell.CalcAndDealDamage(sim, target, baseDamage, spell.OutcomeMeleeWeaponSpecialHitAndCrit)
+		},
+	})
+
+	if !dk.Inputs.NewDrw {
+		dk.RuneWeapon.BloodStrike.DamageMultiplier *= 0.5
+		dk.RuneWeapon.BloodStrike.Flags |= core.SpellFlagIgnoreAttackerModifiers
+	}
 }

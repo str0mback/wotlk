@@ -1,7 +1,6 @@
 package warlock
 
 import (
-	"strconv"
 	"time"
 
 	"github.com/wowsims/wotlk/sim/core"
@@ -9,14 +8,14 @@ import (
 )
 
 func (warlock *Warlock) registerUnstableAfflictionSpell() {
-	actionID := core.ActionID{SpellID: 47843}
 	spellCoeff := 0.2 + 0.01*float64(warlock.Talents.EverlastingAffliction)
 	canCrit := warlock.Talents.Pandemic
 
 	warlock.UnstableAffliction = warlock.RegisterSpell(core.SpellConfig{
-		ActionID:    actionID,
+		ActionID:    core.ActionID{SpellID: 47843},
 		SpellSchool: core.SpellSchoolShadow,
 		ProcMask:    core.ProcMaskSpellDamage,
+		Flags:       core.SpellFlagHauntSE,
 
 		ManaCost: core.ManaCostOptions{
 			BaseCost:   0.15,
@@ -30,7 +29,6 @@ func (warlock *Warlock) registerUnstableAfflictionSpell() {
 		},
 
 		BonusCritRating: 0 +
-			warlock.masterDemonologistShadowCrit +
 			3*core.CritRatingPerCritChance*float64(warlock.Talents.Malediction),
 		DamageMultiplierAdditive: 1 +
 			warlock.GrandSpellstoneBonus() +
@@ -41,33 +39,34 @@ func (warlock *Warlock) registerUnstableAfflictionSpell() {
 		CritMultiplier:   warlock.SpellCritMultiplier(1, 1),
 		ThreatMultiplier: 1 - 0.1*float64(warlock.Talents.ImprovedDrainSoul),
 
-		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
-			result := spell.CalcAndDealOutcome(sim, target, spell.OutcomeMagicHit)
-			if result.Landed() {
-				warlock.UnstableAfflictionDot.Apply(sim)
-			}
+		Dot: core.DotConfig{
+			Aura: core.Aura{
+				Label: "UnstableAffliction",
+			},
+			NumberOfTicks: 5,
+			TickLength:    time.Second * 3,
+			OnSnapshot: func(sim *core.Simulation, target *core.Unit, dot *core.Dot, _ bool) {
+				dot.SnapshotBaseDamage = 230 + spellCoeff*dot.Spell.SpellPower()
+				attackTable := dot.Spell.Unit.AttackTables[target.UnitIndex]
+				dot.SnapshotCritChance = dot.Spell.SpellCritChance(target)
+				dot.SnapshotAttackerMultiplier = dot.Spell.AttackerDamageMultiplier(attackTable)
+			},
+			OnTick: func(sim *core.Simulation, target *core.Unit, dot *core.Dot) {
+				if canCrit {
+					dot.CalcAndDealPeriodicSnapshotDamage(sim, target, dot.OutcomeSnapshotCrit)
+				} else {
+					dot.CalcAndDealPeriodicSnapshotDamage(sim, target, dot.OutcomeTickCounted)
+				}
+			},
 		},
-	})
 
-	warlock.UnstableAfflictionDot = core.NewDot(core.Dot{
-		Spell: warlock.UnstableAffliction,
-		Aura: warlock.CurrentTarget.RegisterAura(core.Aura{
-			Label:    "UnstableAffliction-" + strconv.Itoa(int(warlock.Index)),
-			ActionID: actionID,
-		}),
-		NumberOfTicks: 5,
-		TickLength:    time.Second * 3,
-		OnSnapshot: func(sim *core.Simulation, target *core.Unit, dot *core.Dot, _ bool) {
-			dot.SnapshotBaseDamage = 1150/5 + spellCoeff*dot.Spell.SpellPower()
-			attackTable := dot.Spell.Unit.AttackTables[target.UnitIndex]
-			dot.SnapshotCritChance = dot.Spell.SpellCritChance(target)
-			dot.SnapshotAttackerMultiplier = dot.Spell.AttackerDamageMultiplier(attackTable)
-		},
-		OnTick: func(sim *core.Simulation, target *core.Unit, dot *core.Dot) {
-			if canCrit {
-				dot.CalcAndDealPeriodicSnapshotDamage(sim, target, dot.OutcomeSnapshotCrit)
-			} else {
-				dot.CalcAndDealPeriodicSnapshotDamage(sim, target, dot.OutcomeTick)
+		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
+			// this is a non-standard way of dealing with dot effects, but get's rid of the 0 damage tick
+			// that can proc on-damage effects; same with corruption, curses, ds
+			result := spell.CalcOutcome(sim, target, spell.OutcomeMagicHit)
+			if result.Landed() {
+				spell.SpellMetrics[target.UnitIndex].Hits--
+				spell.Dot(target).Apply(sim)
 			}
 		},
 	})

@@ -7,6 +7,9 @@ import * as InputHelpers from '../core/components/input_helpers.js';
 import {
 	Rogue_Rotation_AssassinationPriority as AssassinationPriority,
 	Rogue_Rotation_CombatPriority as CombatPriority,
+	Rogue_Rotation_CombatBuilder as CombatBuilder,
+	Rogue_Rotation_SubtletyBuilder as SubtletyBuilder,
+	Rogue_Rotation_SubtletyPriority as SubtletyPriority,
 	Rogue_Rotation_Frequency as Frequency,
 	Rogue_Options_PoisonImbue as Poison,
 } from '../core/proto/rogue.js';
@@ -42,6 +45,13 @@ export const StartingOverkillDuration = InputHelpers.makeSpecOptionsNumberInput<
 	labelTooltip: 'Initial Overkill buff duration at the start of each iteration.',
 });
 
+export const HonorOfThievesCritRate = InputHelpers.makeSpecOptionsNumberInput<Spec.SpecRogue>({
+	fieldName: 'honorOfThievesCritRate',
+	label: 'Honor of Thieves Crit Rate',
+	labelTooltip: 'Number of crits other group members generate within 100 seconds',
+	showWhen: (player: Player<Spec.SpecRogue>) => player.getTalents().honorAmongThieves > 0
+});
+
 export const ApplyPoisonsManually = InputHelpers.makeSpecOptionsBooleanInput<Spec.SpecRogue>({
 	fieldName: 'applyPoisonsManually',
 	label: 'Configure poisons manually',
@@ -75,6 +85,26 @@ export const RogueRotationConfig = {
 				{ name: 'Maintain', value: Frequency.Maintain },
 			],
 		}),
+		InputHelpers.makeRotationEnumInput<Spec.SpecRogue, CombatBuilder>({
+			fieldName: 'combatBuilder',
+			label: "Builder",
+			labelTooltip: 'Use Sinister Strike or Backstab as builder.',
+			values: [
+				{ name: "Sinister Strike", value: CombatBuilder.SinisterStrike },
+				{ name: "Backstab", value: CombatBuilder.Backstab },
+			],
+			showWhen: (player: Player<Spec.SpecRogue>) => player.getTalents().combatPotency > 0
+		}),
+		InputHelpers.makeRotationEnumInput<Spec.SpecRogue, CombatPriority>({
+			fieldName: 'combatFinisherPriority',
+			label: 'Finisher Priority',
+			labelTooltip: 'The finisher that will be cast with highest priority.',
+			values: [
+				{ name: 'Rupture', value: CombatPriority.RuptureEviscerate },
+				{ name: 'Eviscerate', value: CombatPriority.EviscerateRupture },
+			],
+			showWhen: (player: Player<Spec.SpecRogue>) => player.getTalents().combatPotency > 0
+		}),
 		InputHelpers.makeRotationEnumInput<Spec.SpecRogue, AssassinationPriority>({
 			fieldName: 'assassinationFinisherPriority',
 			label: 'Finisher Priority',
@@ -85,16 +115,30 @@ export const RogueRotationConfig = {
 			],
 			showWhen: (player: Player<Spec.SpecRogue>) => player.getTalents().mutilate
 		}),
-		InputHelpers.makeRotationNumberInput<Spec.SpecRogue>({
-			fieldName: 'envenomEnergyThreshold',
-			label: 'Energy Threshold (Envenom)',
-			labelTooltip: 'Amount of total energy to pool before casting Envenom.',
-			showWhen: (player: Player<Spec.SpecRogue>) => player.getTalents().mutilate
+		InputHelpers.makeRotationEnumInput<Spec.SpecRogue, SubtletyBuilder>({
+			fieldName: 'subtletyBuilder',
+			label: "Builder",
+			labelTooltip: 'Use Hemorrhage or Backstab as builder.',
+			values: [
+				{ name: "Hemorrhage", value: SubtletyBuilder.Hemorrhage },
+				{ name: "Backstab", value: SubtletyBuilder.BackstabSub },
+			],
+			showWhen: (player: Player<Spec.SpecRogue>) => player.getTalents().honorAmongThieves > 0
+		}),
+		InputHelpers.makeRotationEnumInput<Spec.SpecRogue, SubtletyPriority>({
+			fieldName: 'subtletyFinisherPriority',
+			label: "Finisher Priority",
+			labelTooltip: 'The finisher that will be cast with highest priority.',
+			values: [
+				{ name: "Eviscerate", value: SubtletyPriority.SubtletyEviscerate },
+				{ name: "Envenom", value: SubtletyPriority.SubtletyEnvenom },
+			],
+			showWhen: (player: Player<Spec.SpecRogue>) => player.getTalents().honorAmongThieves > 0
 		}),
 		InputHelpers.makeRotationEnumInput<Spec.SpecRogue, Frequency>({
 			fieldName: 'multiTargetSliceFrequency',
 			label: 'Multi-Target S&D',
-			labelTooltip: 'Frequency of Slice and Dice cast in multi-target scnearios.',
+			labelTooltip: 'Frequency of Slice and Dice cast in multi-target scenarios.',
 			values: [
 				{ name: 'Never', value: Frequency.Never },
 				{ name: 'Once', value: Frequency.Once },
@@ -112,7 +156,18 @@ export const RogueRotationConfig = {
 			fieldName: 'openWithGarrote',
 			label: 'Open with Garrote',
 			labelTooltip: 'Open the encounter by casting Garrote.',
-			showWhen: (player: Player<Spec.SpecRogue>) => player.getTalents().mutilate
+		}),
+		InputHelpers.makeRotationBooleanInput<Spec.SpecRogue>({
+			fieldName: 'openWithShadowstep',
+			label: 'Open with Shadowstep',
+			labelTooltip: 'Open the encounter by casting Shadowstep.',
+			showWhen: (player: Player<Spec.SpecRogue>) => player.getTalents().shadowstep
+		}),
+		InputHelpers.makeRotationBooleanInput<Spec.SpecRogue>({
+			fieldName: 'openWithPremeditation',
+			label: 'Open with Premeditation',
+			labelTooltip: 'Open the encounter by casting Premeditation.',
+			showWhen: (player: Player<Spec.SpecRogue>) => player.getTalents().premeditation
 		}),
 		InputHelpers.makeRotationBooleanInput<Spec.SpecRogue>({
 			fieldName: 'useFeint',
@@ -120,16 +175,10 @@ export const RogueRotationConfig = {
 			labelTooltip: 'Cast Feint on cooldown. Mainly useful when using the associate glyph.'
 		}),
 		InputHelpers.makeRotationBooleanInput<Spec.SpecRogue>({
-			fieldName: 'allowCpUndercap',
-			label: 'Undercap CP',
-			labelTooltip: 'Cast Envenom at 3 cp if the Envenom buff is missing.',
-			showWhen: (player: Player<Spec.SpecRogue>) => player.getTalents().mutilate
-		}),
-		InputHelpers.makeRotationBooleanInput<Spec.SpecRogue>({
-			fieldName: 'allowCpOvercap',
-			label: 'Overcap CP',
-			labelTooltip: 'Cast Mutilate at 4 cp if the Envenom buff will last long enough.',
-			showWhen: (player: Player<Spec.SpecRogue>) => player.getTalents().mutilate
+			fieldName: "useGhostlyStrike",
+			label: 'Use Ghostly Strike',
+			labelTooltip: 'Use Ghostly Strike on cooldown. Mainly useful when using the associate glyph.',
+			showWhen: (player: Player<Spec.SpecRogue>) => player.getTalents().ghostlyStrike
 		}),
 		InputHelpers.makeRotationBooleanInput<Spec.SpecRogue>({
 			fieldName: 'ruptureForBleed',

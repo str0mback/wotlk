@@ -17,7 +17,7 @@ func (dk *Deathknight) registerVampiricBloodSpell() {
 	healthMetrics := dk.NewHealthMetrics(actionID)
 
 	cdTimer := dk.NewTimer()
-	cd := time.Minute * 1
+	cd := time.Minute*1 - dk.thassariansPlateCooldownReduction(dk.VampiricBlood)
 
 	var bonusHealth float64
 	dk.VampiricBloodAura = dk.RegisterAura(core.Aura{
@@ -28,25 +28,24 @@ func (dk *Deathknight) registerVampiricBloodSpell() {
 			bonusHealth = dk.MaxHealth() * 0.15
 			dk.AddStatsDynamic(sim, stats.Stats{stats.Health: bonusHealth})
 			dk.GainHealth(sim, bonusHealth, healthMetrics)
-		},
+			dk.PseudoStats.HealingTakenMultiplier *= 1.35
 
+		},
 		OnExpire: func(aura *core.Aura, sim *core.Simulation) {
 			dk.AddStatsDynamic(sim, stats.Stats{stats.Health: -bonusHealth})
+			dk.PseudoStats.HealingTakenMultiplier /= 1.35
 		},
 	})
 
-	baseCost := float64(core.NewRuneCost(10, 1, 0, 0, 0))
-	rs := &RuneSpell{}
-	dk.VampiricBlood = dk.RegisterSpell(rs, core.SpellConfig{
-		ActionID:     actionID,
-		Flags:        core.SpellFlagNoOnCastComplete,
-		ResourceType: stats.RunicPower,
-		BaseCost:     baseCost,
+	dk.VampiricBlood = dk.RegisterSpell(core.SpellConfig{
+		ActionID: actionID,
+		Flags:    core.SpellFlagNoOnCastComplete,
+
+		RuneCost: core.RuneCostOptions{
+			BloodRuneCost:  1,
+			RunicPowerGain: 10,
+		},
 		Cast: core.CastConfig{
-			DefaultCast: core.Cast{
-				Cost: baseCost,
-				// TODO: does not invoke the GCD?
-			},
 			CD: core.Cooldown{
 				Timer:    cdTimer,
 				Duration: cd,
@@ -55,20 +54,13 @@ func (dk *Deathknight) registerVampiricBloodSpell() {
 		},
 		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
 			dk.VampiricBloodAura.Activate(sim)
-			rs.DoCost(sim)
 		},
-	}, func(sim *core.Simulation) bool {
-		return dk.CastCostPossible(sim, 0, 1, 0, 0) && dk.VampiricBlood.IsReady(sim)
-	}, nil)
+	})
 
 	if !dk.Inputs.IsDps {
 		dk.AddMajorCooldown(core.MajorCooldown{
-			Spell:    dk.VampiricBlood.Spell,
-			Type:     core.CooldownTypeSurvival,
-			Priority: core.CooldownPriorityDefault,
-			CanActivate: func(sim *core.Simulation, character *core.Character) bool {
-				return dk.VampiricBlood.CanCast(sim)
-			},
+			Spell: dk.VampiricBlood,
+			Type:  core.CooldownTypeSurvival,
 		})
 	}
 }

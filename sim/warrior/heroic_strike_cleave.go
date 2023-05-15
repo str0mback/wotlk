@@ -15,20 +15,12 @@ func (warrior *Warrior) registerHeroicStrikeSpell() {
 	warrior.HeroicStrikeOrCleave = warrior.RegisterSpell(core.SpellConfig{
 		ActionID:    core.ActionID{SpellID: 47450},
 		SpellSchool: core.SpellSchoolPhysical,
-		ProcMask:    core.ProcMaskMeleeMHAuto | core.ProcMaskMeleeMHSpecial,
+		ProcMask:    core.ProcMaskMeleeMHSpecial,
 		Flags:       core.SpellFlagMeleeMetrics | core.SpellFlagIncludeTargetBonusDamage | core.SpellFlagNoOnCastComplete | SpellFlagBloodsurge,
 
 		RageCost: core.RageCostOptions{
 			Cost:   15 - float64(warrior.Talents.ImprovedHeroicStrike) - float64(warrior.Talents.FocusedRage),
 			Refund: 0.8,
-		},
-		Cast: core.CastConfig{
-			ModifyCast: func(sim *core.Simulation, spell *core.Spell, cast *core.Cast) {
-				if warrior.glyphOfRevengeProcAura.IsActive() {
-					cast.Cost = 0
-					warrior.glyphOfRevengeProcAura.Deactivate(sim)
-				}
-			},
 		},
 
 		BonusCritRating:  (5*float64(warrior.Talents.Incite) + core.TernaryFloat64(warrior.HasSetBonus(ItemSetWrynnsBattlegear, 4), 5, 0)) * core.CritRatingPerCritChance,
@@ -65,7 +57,7 @@ func (warrior *Warrior) registerCleaveSpell() {
 	warrior.HeroicStrikeOrCleave = warrior.RegisterSpell(core.SpellConfig{
 		ActionID:    core.ActionID{SpellID: 47520},
 		SpellSchool: core.SpellSchoolPhysical,
-		ProcMask:    core.ProcMaskMeleeMHAuto | core.ProcMaskMeleeMHSpecial,
+		ProcMask:    core.ProcMaskMeleeMHSpecial,
 		Flags:       core.SpellFlagMeleeMetrics | core.SpellFlagIncludeTargetBonusDamage,
 
 		RageCost: core.RageCostOptions{

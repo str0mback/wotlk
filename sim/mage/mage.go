@@ -77,25 +77,18 @@ type Mage struct {
 	IcyVeins             *core.Spell
 	SummonWaterElemental *core.Spell
 
-	ArcaneMissilesDot *core.Dot
-	LivingBombDot     *core.Dot // living bomb is used for single-target only, currently
-	FireballDot       *core.Dot
-	FlamestrikeDot    *core.Dot
-	FrostfireDot      *core.Dot
-	PyroblastDot      *core.Dot
-
 	ArcaneBlastAura    *core.Aura
 	ArcanePotencyAura  *core.Aura
 	ArcanePowerAura    *core.Aura
 	MissileBarrageAura *core.Aura
 	ClearcastingAura   *core.Aura
-	ScorchAura         *core.Aura
+	ScorchAuras        core.AuraArray
 	HotStreakAura      *core.Aura
 	CombustionAura     *core.Aura
 	FingersOfFrostAura *core.Aura
 	BrainFreezeAura    *core.Aura
 
-	IgniteDots []*core.Dot
+	CritDebuffCategories core.ExclusiveCategoryArray
 }
 
 func (mage *Mage) GetCharacter() *core.Character {
@@ -143,6 +136,14 @@ func (mage *Mage) Initialize() {
 	mage.registerEvocationCD()
 	mage.registerManaGemsCD()
 	mage.registerMirrorImageCD()
+
+	if mirrorImageMCD := mage.GetMajorCooldownIgnoreTag(mage.MirrorImage.ActionID); mirrorImageMCD != nil {
+		if len(mirrorImageMCD.GetTimings()) == 0 {
+			mage.RegisterPrepullAction(-1500*time.Millisecond, func(sim *core.Simulation) {
+				mage.MirrorImage.Cast(sim, nil)
+			})
+		}
+	}
 }
 
 func (mage *Mage) Reset(sim *core.Simulation) {
@@ -171,6 +172,9 @@ func NewMage(character core.Character, options *proto.Player) *Mage {
 	mage.EnableManaBar()
 	mage.EnableResumeAfterManaWait(mage.tryUseGCD)
 
+	if !mage.Talents.ArcaneBarrage {
+		mage.Rotation.UseArcaneBarrage = false
+	}
 	if mage.Talents.ImprovedScorch == 0 {
 		mage.Rotation.MaintainImprovedScorch = false
 	}

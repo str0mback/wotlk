@@ -29,9 +29,6 @@ func (shaman *Shaman) registerFireNovaSpell() {
 				Timer:    shaman.NewTimer(),
 				Duration: time.Second * time.Duration(fireNovaCooldown),
 			},
-			ModifyCast: func(_ *core.Simulation, spell *core.Spell, cast *core.Cast) {
-				shaman.modifyCastClearcasting(spell, cast)
-			},
 		},
 
 		BonusHitRating:   float64(shaman.Talents.ElementalPrecision) * core.SpellHitRatingPerHitChance,
@@ -42,11 +39,11 @@ func (shaman *Shaman) registerFireNovaSpell() {
 		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
 			// FIXME: double check spell coefficients
 			dmgFromSP := 0.2142 * spell.SpellPower()
-			for _, aoeTarget := range sim.Encounter.Targets {
+			for _, aoeTarget := range sim.Encounter.TargetUnits {
 				baseDamage := sim.Roll(893, 997) + dmgFromSP
 				// TODO: Uncomment this
 				//baseDamage *= sim.Encounter.AOECapMultiplier()
-				spell.CalcAndDealDamage(sim, &aoeTarget.Unit, baseDamage, spell.OutcomeMagicHitAndCrit)
+				spell.CalcAndDealDamage(sim, aoeTarget, baseDamage, spell.OutcomeMagicHitAndCrit)
 			}
 		},
 	})

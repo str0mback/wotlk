@@ -34,9 +34,7 @@ func (dk *Deathknight) RotationActionCallback_PS(sim *core.Simulation, target *c
 }
 
 func (dk *Deathknight) RotationActionCallback_HW(sim *core.Simulation, target *core.Unit, s *Sequence) time.Duration {
-	if dk.HornOfWinter.CanCast(sim) {
-		dk.HornOfWinter.Cast(sim, target)
-	}
+	dk.HornOfWinter.Cast(sim, target)
 
 	s.Advance()
 	return -1
@@ -65,7 +63,12 @@ func (dk *Deathknight) RotationActionCallback_DS(sim *core.Simulation, target *c
 }
 
 func (dk *Deathknight) RotationActionCallback_HS(sim *core.Simulation, target *core.Unit, s *Sequence) time.Duration {
-	casted := dk.HeartStrike.Cast(sim, target)
+	casted := false
+	if dk.Talents.HeartStrike {
+		casted = dk.HeartStrike.Cast(sim, target)
+	} else {
+		casted = dk.BloodStrike.Cast(sim, target)
+	}
 	advance := dk.LastOutcome.Matches(core.OutcomeLanded)
 
 	s.ConditionalAdvance(casted && advance)
@@ -207,7 +210,9 @@ func (dk *Deathknight) RotationActionCallback_UP(sim *core.Simulation, target *c
 }
 
 func (dk *Deathknight) RotationActionCallback_RD(sim *core.Simulation, target *core.Unit, s *Sequence) time.Duration {
-	dk.RaiseDead.Cast(sim, target)
+	if !dk.Talents.MasterOfGhouls {
+		dk.RaiseDead.Cast(sim, target)
+	}
 
 	s.Advance()
 	return -1
@@ -223,25 +228,17 @@ func (s *Sequence) DoAction(sim *core.Simulation, target *core.Unit, dk *Deathkn
 	return action(sim, target, s)
 }
 
-func (dk *Deathknight) NextMHSwingAt(sim *core.Simulation) time.Duration {
-	return dk.AutoAttacks.MainhandSwingAt
-}
-func (dk *Deathknight) NextSwingAt(sim *core.Simulation) time.Duration {
-	waitUntil := dk.AutoAttacks.MainhandSwingAt
-	if dk.AutoAttacks.OffhandSwingAt > sim.CurrentTime {
-		waitUntil = core.MinDuration(waitUntil, dk.AutoAttacks.OffhandSwingAt)
-	}
-	return waitUntil
-}
-
 func (dk *Deathknight) Wait(sim *core.Simulation) {
-	waitUntil := dk.NextSwingAt(sim)
+	waitUntil := sim.CurrentTime + time.Millisecond*200
 
 	anyRuneAt := dk.AnyRuneReadyAt(sim)
 	if anyRuneAt != sim.CurrentTime {
 		waitUntil = core.MinDuration(waitUntil, anyRuneAt)
 	} else {
 		waitUntil = core.MinDuration(waitUntil, dk.AnySpentRuneReadyAt())
+	}
+	if sim.Log != nil {
+		dk.Log(sim, "DK Wait: %s, any at: %s, any spent at: %s", waitUntil, anyRuneAt, dk.AnySpentRuneReadyAt())
 	}
 
 	if dk.ButcheryPA != nil {
@@ -272,11 +269,20 @@ func (dk *Deathknight) DoRotation(sim *core.Simulation) {
 
 	optWait := time.Duration(-1)
 	if dk.RotationSequence.IsOngoing() {
+		if sim.Log != nil {
+			dk.Log(sim, "DoSequenceAction")
+		}
 		optWait = dk.RotationSequence.DoAction(sim, target, dk)
 	}
 
 	if dk.GCD.IsReady(sim) {
+		if sim.Log != nil {
+			dk.Log(sim, "DoGCD")
+		}
 		for optWait == 0 && dk.GCD.IsReady(sim) {
+			if sim.Log != nil {
+				dk.Log(sim, "DoAction")
+			}
 			optWait = dk.RotationSequence.DoAction(sim, target, dk)
 		}
 

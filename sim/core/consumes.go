@@ -269,9 +269,9 @@ func applyConsumeEffects(agent Agent) {
 				stats.ShadowResistance: 10,
 			})
 
-			var debuffAuras []*Aura
-			for _, target := range character.Env.Encounter.Targets {
-				debuffAuras = append(debuffAuras, GiftOfArthasAura(&target.Unit))
+			debuffAuras := make([]*Aura, len(character.Env.Encounter.TargetUnits))
+			for i, target := range character.Env.Encounter.TargetUnits {
+				debuffAuras[i] = GiftOfArthasAura(target)
 			}
 
 			actionID := ActionID{SpellID: 11374}
@@ -454,83 +454,21 @@ func registerPotionCD(agent Agent, consumes *proto.Consumes) {
 
 	potionCD := character.NewTimer()
 
-	prepopTime := time.Second
-	startingMCD := makePotionActivation(startingPotion, character, potionCD, prepopTime)
-	hasPrepopPotion := startingMCD.Spell != nil
-	if hasPrepopPotion {
-		startingPotionSpell := startingMCD.Spell
-		character.RegisterResetEffect(func(sim *Simulation) {
-			StartDelayedAction(sim, DelayedActionOptions{
-				DoAt: 0,
-				OnAction: func(sim *Simulation) {
-					startingPotionSpell.Cast(sim, nil)
-					potionCD.Set(time.Minute - prepopTime)
-					character.UpdateMajorCooldowns()
-				},
-			})
+	startingMCD := makePotionActivation(startingPotion, character, potionCD)
+	if startingMCD.Spell != nil {
+		character.RegisterPrepullAction(-1*time.Second, func(sim *Simulation) {
+			startingMCD.Spell.Cast(sim, nil)
+			if startingPotion == proto.Potions_IndestructiblePotion {
+				potionCD.Set(sim.CurrentTime + 2*time.Minute)
+			} else {
+				potionCD.Set(sim.CurrentTime + time.Minute)
+			}
+			character.UpdateMajorCooldowns()
 		})
 	}
 
-	defaultMCD := makePotionActivation(defaultPotion, character, potionCD, 0)
+	defaultMCD := makePotionActivation(defaultPotion, character, potionCD)
 	if defaultMCD.Spell != nil {
-		usedDefaultPotion := false
-
-		canActivate := defaultMCD.CanActivate
-		defaultMCD.CanActivate = func(sim *Simulation, character *Character) bool {
-			if usedDefaultPotion {
-				return false
-			}
-
-			if hasPrepopPotion && sim.CurrentTime < time.Second*1 {
-				// Because of prepop's StartDelayedAction call, regular potion actually gets
-				// checked first so we need to make sure it doesn't activate.
-				return false
-			}
-
-			if canActivate != nil {
-				return canActivate(sim, character)
-			} else {
-				return true
-			}
-		}
-
-		hasEngi := character.HasProfession(proto.Profession_Engineering)
-		defaultPotionSpell := defaultMCD.Spell
-		defaultMCD.ActivationFactory = func(sim *Simulation) CooldownActivation {
-			usedDefaultPotion = false
-			if defaultPotion == proto.Potions_SuperManaPotion {
-				character.ExpectedBonusMana += float64((3000 + 1800) / 2)
-			}
-			if defaultPotion == proto.Potions_RunicManaPotion {
-				character.ExpectedBonusMana += float64((4200 + 4400) / 2)
-			}
-			if defaultPotion == proto.Potions_RunicManaInjector {
-				multiplier := 1.0
-				if hasEngi {
-					multiplier = 1.25
-				}
-				character.ExpectedBonusMana += (4200 + 4400) / 2 * multiplier
-			}
-
-			return func(sim *Simulation, character *Character) {
-				usedDefaultPotion = true
-				defaultPotionSpell.Cast(sim, nil)
-
-				if defaultPotion == proto.Potions_SuperManaPotion {
-					character.ExpectedBonusMana -= float64((3000 + 1800) / 2)
-				}
-				if defaultPotion == proto.Potions_RunicManaPotion {
-					character.ExpectedBonusMana -= float64((4200 + 4400) / 2)
-				}
-				if defaultPotion == proto.Potions_RunicManaInjector {
-					multiplier := 1.0
-					if hasEngi {
-						multiplier = 1.25
-					}
-					character.ExpectedBonusMana -= (4200 + 4400) / 2 * multiplier
-				}
-			}
-		}
 		character.AddMajorCooldown(defaultMCD)
 	}
 }
@@ -545,9 +483,16 @@ func (character *Character) HasAlchStone() bool {
 	return character.HasProfession(proto.Profession_Alchemy) && alchStoneEquipped
 }
 
-func makePotionActivation(potionType proto.Potions, character *Character, potionCD *Timer, prepopTime time.Duration) MajorCooldown {
+func makePotionActivation(potionType proto.Potions, character *Character, potionCD *Timer) MajorCooldown {
 	alchStoneEquipped := character.HasAlchStone()
 	hasEngi := character.HasProfession(proto.Profession_Engineering)
+
+	potionCast := CastConfig{
+		CD: Cooldown{
+			Timer:    potionCD,
+			Duration: time.Minute * 60, // Infinite CD
+		},
+	}
 
 	if potionType == proto.Potions_RunicHealingPotion || potionType == proto.Potions_RunicHealingInjector {
 		itemId := map[proto.Potions]int32{
@@ -558,30 +503,19 @@ func makePotionActivation(potionType proto.Potions, character *Character, potion
 		healthMetrics := character.NewHealthMetrics(actionID)
 		return MajorCooldown{
 			Type: CooldownTypeSurvival,
-			CanActivate: func(sim *Simulation, character *Character) bool {
-				return true
-			},
-			ShouldActivate: func(sim *Simulation, character *Character) bool {
-				return true
-			},
 			Spell: character.RegisterSpell(SpellConfig{
 				ActionID: actionID,
 				Flags:    SpellFlagNoOnCastComplete,
-				Cast: CastConfig{
-					CD: Cooldown{
-						Timer:    potionCD,
-						Duration: time.Minute * 1,
-					},
-				},
+				Cast:     potionCast,
 				ApplyEffects: func(sim *Simulation, _ *Unit, _ *Spell) {
-					healthGain := 2700.0 + (4500.0-2700.0)*sim.RandomFloat("RunicHealingPotion")
+					healthGain := sim.RollWithLabel(2700, 4500, "RunicHealingPotion")
 
 					if alchStoneEquipped && potionType == proto.Potions_RunicHealingPotion {
 						healthGain *= 1.40
 					} else if hasEngi && potionType == proto.Potions_RunicHealingInjector {
 						healthGain *= 1.25
 					}
-					character.GainHealth(sim, healthGain, healthMetrics)
+					character.GainHealth(sim, healthGain*character.PseudoStats.HealingTakenMultiplier, healthMetrics)
 				},
 			}),
 		}
@@ -594,9 +528,6 @@ func makePotionActivation(potionType proto.Potions, character *Character, potion
 		manaMetrics := character.NewManaMetrics(actionID)
 		return MajorCooldown{
 			Type: CooldownTypeMana,
-			CanActivate: func(sim *Simulation, character *Character) bool {
-				return true
-			},
 			ShouldActivate: func(sim *Simulation, character *Character) bool {
 				// Only pop if we have less than the max mana provided by the potion minus 1mp5 tick.
 				totalRegen := character.ManaRegenPerSecondWhileCasting() * 5
@@ -611,43 +542,27 @@ func makePotionActivation(potionType proto.Potions, character *Character, potion
 			Spell: character.RegisterSpell(SpellConfig{
 				ActionID: actionID,
 				Flags:    SpellFlagNoOnCastComplete,
-				Cast: CastConfig{
-					CD: Cooldown{
-						Timer:    potionCD,
-						Duration: time.Minute * 1,
-					},
-				},
+				Cast:     potionCast,
 				ApplyEffects: func(sim *Simulation, _ *Unit, _ *Spell) {
-					manaGain := 4200 + (4400.0-4200.0)*sim.RandomFloat("RunicManaPotion")
+					manaGain := sim.RollWithLabel(4200, 4400, "RunicManaPotion")
 					if alchStoneEquipped && potionType == proto.Potions_RunicManaPotion {
 						manaGain *= 1.4
 					} else if hasEngi && potionType == proto.Potions_RunicManaInjector {
 						manaGain *= 1.25
 					}
-					character.AddMana(sim, manaGain, manaMetrics, true)
+					character.AddMana(sim, manaGain, manaMetrics)
 				},
 			}),
 		}
 	} else if potionType == proto.Potions_IndestructiblePotion {
 		actionID := ActionID{ItemID: 40093}
-		aura := character.NewTemporaryStatsAura("Indestructible Potion", actionID, stats.Stats{stats.Armor: 3500}, time.Minute*2-prepopTime)
+		aura := character.NewTemporaryStatsAura("Indestructible Potion", actionID, stats.Stats{stats.Armor: 3500}, time.Minute*2)
 		return MajorCooldown{
 			Type: CooldownTypeDPS,
-			CanActivate: func(sim *Simulation, character *Character) bool {
-				return true
-			},
-			ShouldActivate: func(sim *Simulation, character *Character) bool {
-				return true
-			},
 			Spell: character.RegisterSpell(SpellConfig{
 				ActionID: actionID,
 				Flags:    SpellFlagNoOnCastComplete,
-				Cast: CastConfig{
-					CD: Cooldown{
-						Timer:    potionCD,
-						Duration: time.Minute * 1,
-					},
-				},
+				Cast:     potionCast,
 				ApplyEffects: func(sim *Simulation, _ *Unit, _ *Spell) {
 					aura.Activate(sim)
 				},
@@ -655,24 +570,13 @@ func makePotionActivation(potionType proto.Potions, character *Character, potion
 		}
 	} else if potionType == proto.Potions_PotionOfSpeed {
 		actionID := ActionID{ItemID: 40211}
-		aura := character.NewTemporaryStatsAura("Potion of Speed", actionID, stats.Stats{stats.MeleeHaste: 500, stats.SpellHaste: 500}, time.Second*15-prepopTime)
+		aura := character.NewTemporaryStatsAura("Potion of Speed", actionID, stats.Stats{stats.MeleeHaste: 500, stats.SpellHaste: 500}, time.Second*15)
 		return MajorCooldown{
 			Type: CooldownTypeDPS,
-			CanActivate: func(sim *Simulation, character *Character) bool {
-				return true
-			},
-			ShouldActivate: func(sim *Simulation, character *Character) bool {
-				return true
-			},
 			Spell: character.RegisterSpell(SpellConfig{
 				ActionID: actionID,
 				Flags:    SpellFlagNoOnCastComplete,
-				Cast: CastConfig{
-					CD: Cooldown{
-						Timer:    potionCD,
-						Duration: time.Minute * 1,
-					},
-				},
+				Cast:     potionCast,
 				ApplyEffects: func(sim *Simulation, _ *Unit, _ *Spell) {
 					aura.Activate(sim)
 				},
@@ -680,24 +584,13 @@ func makePotionActivation(potionType proto.Potions, character *Character, potion
 		}
 	} else if potionType == proto.Potions_PotionOfWildMagic {
 		actionID := ActionID{ItemID: 40212}
-		aura := character.NewTemporaryStatsAura("Potion of Wild Magic", actionID, stats.Stats{stats.SpellPower: 200, stats.SpellCrit: 200, stats.MeleeCrit: 200}, time.Second*15-prepopTime)
+		aura := character.NewTemporaryStatsAura("Potion of Wild Magic", actionID, stats.Stats{stats.SpellPower: 200, stats.SpellCrit: 200, stats.MeleeCrit: 200}, time.Second*15)
 		return MajorCooldown{
 			Type: CooldownTypeDPS,
-			CanActivate: func(sim *Simulation, character *Character) bool {
-				return true
-			},
-			ShouldActivate: func(sim *Simulation, character *Character) bool {
-				return true
-			},
 			Spell: character.RegisterSpell(SpellConfig{
 				ActionID: actionID,
 				Flags:    SpellFlagNoOnCastComplete,
-				Cast: CastConfig{
-					CD: Cooldown{
-						Timer:    potionCD,
-						Duration: time.Minute * 1,
-					},
-				},
+				Cast:     potionCast,
 				ApplyEffects: func(sim *Simulation, _ *Unit, _ *Spell) {
 					aura.Activate(sim)
 				},
@@ -705,24 +598,13 @@ func makePotionActivation(potionType proto.Potions, character *Character, potion
 		}
 	} else if potionType == proto.Potions_DestructionPotion {
 		actionID := ActionID{ItemID: 22839}
-		aura := character.NewTemporaryStatsAura("Destruction Potion", actionID, stats.Stats{stats.SpellPower: 120, stats.SpellCrit: 2 * CritRatingPerCritChance}, time.Second*15-prepopTime)
+		aura := character.NewTemporaryStatsAura("Destruction Potion", actionID, stats.Stats{stats.SpellPower: 120, stats.SpellCrit: 2 * CritRatingPerCritChance}, time.Second*15)
 		return MajorCooldown{
 			Type: CooldownTypeDPS,
-			CanActivate: func(sim *Simulation, character *Character) bool {
-				return true
-			},
-			ShouldActivate: func(sim *Simulation, character *Character) bool {
-				return true
-			},
 			Spell: character.RegisterSpell(SpellConfig{
 				ActionID: actionID,
 				Flags:    SpellFlagNoOnCastComplete,
-				Cast: CastConfig{
-					CD: Cooldown{
-						Timer:    potionCD,
-						Duration: time.Minute * 1,
-					},
-				},
+				Cast:     potionCast,
 				ApplyEffects: func(sim *Simulation, _ *Unit, _ *Spell) {
 					aura.Activate(sim)
 				},
@@ -734,9 +616,6 @@ func makePotionActivation(potionType proto.Potions, character *Character, potion
 		manaMetrics := character.NewManaMetrics(actionID)
 		return MajorCooldown{
 			Type: CooldownTypeMana,
-			CanActivate: func(sim *Simulation, character *Character) bool {
-				return true
-			},
 			ShouldActivate: func(sim *Simulation, character *Character) bool {
 				// Only pop if we have less than the max mana provided by the potion minus 1mp5 tick.
 				totalRegen := character.ManaRegenPerSecondWhileCasting() * 5
@@ -745,42 +624,26 @@ func makePotionActivation(potionType proto.Potions, character *Character, potion
 			Spell: character.RegisterSpell(SpellConfig{
 				ActionID: actionID,
 				Flags:    SpellFlagNoOnCastComplete,
-				Cast: CastConfig{
-					CD: Cooldown{
-						Timer:    potionCD,
-						Duration: time.Minute * 1,
-					},
-				},
+				Cast:     potionCast,
 				ApplyEffects: func(sim *Simulation, _ *Unit, _ *Spell) {
 					// Restores 1800 to 3000 mana. (2 Min Cooldown)
-					manaGain := 1800 + (sim.RandomFloat("super mana") * 1200)
+					manaGain := sim.RollWithLabel(1800, 3000, "super mana")
 					if alchStoneEquipped {
 						manaGain *= 1.4
 					}
-					character.AddMana(sim, manaGain, manaMetrics, true)
+					character.AddMana(sim, manaGain, manaMetrics)
 				},
 			}),
 		}
 	} else if potionType == proto.Potions_HastePotion {
 		actionID := ActionID{ItemID: 22838}
-		aura := character.NewTemporaryStatsAura("Haste Potion", actionID, stats.Stats{stats.MeleeHaste: 400}, time.Second*15-prepopTime)
+		aura := character.NewTemporaryStatsAura("Haste Potion", actionID, stats.Stats{stats.MeleeHaste: 400}, time.Second*15)
 		return MajorCooldown{
 			Type: CooldownTypeDPS,
-			CanActivate: func(sim *Simulation, character *Character) bool {
-				return true
-			},
-			ShouldActivate: func(sim *Simulation, character *Character) bool {
-				return true
-			},
 			Spell: character.RegisterSpell(SpellConfig{
 				ActionID: actionID,
 				Flags:    SpellFlagNoOnCastComplete,
-				Cast: CastConfig{
-					CD: Cooldown{
-						Timer:    potionCD,
-						Duration: time.Minute * 1,
-					},
-				},
+				Cast:     potionCast,
 				ApplyEffects: func(sim *Simulation, _ *Unit, _ *Spell) {
 					aura.Activate(sim)
 				},
@@ -788,13 +651,10 @@ func makePotionActivation(potionType proto.Potions, character *Character, potion
 		}
 	} else if potionType == proto.Potions_MightyRagePotion {
 		actionID := ActionID{ItemID: 13442}
-		aura := character.NewTemporaryStatsAura("Mighty Rage Potion", actionID, stats.Stats{stats.Strength: 60}, time.Second*15-prepopTime)
+		aura := character.NewTemporaryStatsAura("Mighty Rage Potion", actionID, stats.Stats{stats.Strength: 60}, time.Second*15)
 		rageMetrics := character.NewRageMetrics(actionID)
 		return MajorCooldown{
 			Type: CooldownTypeDPS,
-			CanActivate: func(sim *Simulation, character *Character) bool {
-				return true
-			},
 			ShouldActivate: func(sim *Simulation, character *Character) bool {
 				if character.Class == proto.Class_ClassWarrior {
 					return character.CurrentRage() < 25
@@ -804,16 +664,11 @@ func makePotionActivation(potionType proto.Potions, character *Character, potion
 			Spell: character.RegisterSpell(SpellConfig{
 				ActionID: actionID,
 				Flags:    SpellFlagNoOnCastComplete,
-				Cast: CastConfig{
-					CD: Cooldown{
-						Timer:    potionCD,
-						Duration: time.Minute * 1,
-					},
-				},
+				Cast:     potionCast,
 				ApplyEffects: func(sim *Simulation, _ *Unit, _ *Spell) {
 					aura.Activate(sim)
 					if character.Class == proto.Class_ClassWarrior {
-						bonusRage := 45.0 + (75.0-45.0)*sim.RandomFloat("Mighty Rage Potion")
+						bonusRage := sim.RollWithLabel(45, 75, "Mighty Rage Potion")
 						character.AddRage(sim, bonusRage, rageMetrics)
 					}
 				},
@@ -830,14 +685,11 @@ func makePotionActivation(potionType proto.Potions, character *Character, potion
 		}
 		mp5 := manaGain / 24 * 5
 
-		buffAura := character.NewTemporaryStatsAura("Fel Mana Potion", actionID, stats.Stats{stats.MP5: mp5}, time.Second*24-prepopTime)
+		buffAura := character.NewTemporaryStatsAura("Fel Mana Potion", actionID, stats.Stats{stats.MP5: mp5}, time.Second*24)
 		debuffAura := character.NewTemporaryStatsAura("Fel Mana Potion Debuff", ActionID{SpellID: 38927}, stats.Stats{stats.SpellPower: -25}, time.Minute*15)
 
 		return MajorCooldown{
 			Type: CooldownTypeMana,
-			CanActivate: func(sim *Simulation, character *Character) bool {
-				return true
-			},
 			ShouldActivate: func(sim *Simulation, character *Character) bool {
 				// Only pop if we have low enough mana. The potion takes effect over 24
 				// seconds so we can pop it a little earlier than the full value.
@@ -846,12 +698,7 @@ func makePotionActivation(potionType proto.Potions, character *Character, potion
 			Spell: character.RegisterSpell(SpellConfig{
 				ActionID: actionID,
 				Flags:    SpellFlagNoOnCastComplete,
-				Cast: CastConfig{
-					CD: Cooldown{
-						Timer:    potionCD,
-						Duration: time.Minute * 1,
-					},
-				},
+				Cast:     potionCast,
 				ApplyEffects: func(sim *Simulation, _ *Unit, _ *Spell) {
 					buffAura.Activate(sim)
 					debuffAura.Activate(sim)
@@ -861,24 +708,13 @@ func makePotionActivation(potionType proto.Potions, character *Character, potion
 		}
 	} else if potionType == proto.Potions_InsaneStrengthPotion {
 		actionID := ActionID{ItemID: 22828}
-		aura := character.NewTemporaryStatsAura("Insane Strength Potion", actionID, stats.Stats{stats.Strength: 120, stats.Defense: -75}, time.Second*15-prepopTime)
+		aura := character.NewTemporaryStatsAura("Insane Strength Potion", actionID, stats.Stats{stats.Strength: 120, stats.Defense: -75}, time.Second*15)
 		return MajorCooldown{
 			Type: CooldownTypeDPS,
-			CanActivate: func(sim *Simulation, character *Character) bool {
-				return true
-			},
-			ShouldActivate: func(sim *Simulation, character *Character) bool {
-				return true
-			},
 			Spell: character.RegisterSpell(SpellConfig{
 				ActionID: actionID,
 				Flags:    SpellFlagNoOnCastComplete,
-				Cast: CastConfig{
-					CD: Cooldown{
-						Timer:    potionCD,
-						Duration: time.Minute * 1,
-					},
-				},
+				Cast:     potionCast,
 				ApplyEffects: func(sim *Simulation, _ *Unit, _ *Spell) {
 					aura.Activate(sim)
 				},
@@ -886,24 +722,13 @@ func makePotionActivation(potionType proto.Potions, character *Character, potion
 		}
 	} else if potionType == proto.Potions_IronshieldPotion {
 		actionID := ActionID{ItemID: 22849}
-		aura := character.NewTemporaryStatsAura("Ironshield Potion", actionID, stats.Stats{stats.Armor: 2500}, time.Minute*2-prepopTime)
+		aura := character.NewTemporaryStatsAura("Ironshield Potion", actionID, stats.Stats{stats.Armor: 2500}, time.Minute*2)
 		return MajorCooldown{
 			Type: CooldownTypeDPS,
-			CanActivate: func(sim *Simulation, character *Character) bool {
-				return true
-			},
-			ShouldActivate: func(sim *Simulation, character *Character) bool {
-				return true
-			},
 			Spell: character.RegisterSpell(SpellConfig{
 				ActionID: actionID,
 				Flags:    SpellFlagNoOnCastComplete,
-				Cast: CastConfig{
-					CD: Cooldown{
-						Timer:    potionCD,
-						Duration: time.Minute * 1,
-					},
-				},
+				Cast:     potionCast,
 				ApplyEffects: func(sim *Simulation, _ *Unit, _ *Spell) {
 					aura.Activate(sim)
 				},
@@ -911,24 +736,13 @@ func makePotionActivation(potionType proto.Potions, character *Character, potion
 		}
 	} else if potionType == proto.Potions_HeroicPotion {
 		actionID := ActionID{ItemID: 22837}
-		aura := character.NewTemporaryStatsAura("Heroic Potion", actionID, stats.Stats{stats.Strength: 70, stats.Health: 700}, time.Second*15-prepopTime)
+		aura := character.NewTemporaryStatsAura("Heroic Potion", actionID, stats.Stats{stats.Strength: 70, stats.Health: 700}, time.Second*15)
 		return MajorCooldown{
 			Type: CooldownTypeDPS,
-			CanActivate: func(sim *Simulation, character *Character) bool {
-				return true
-			},
-			ShouldActivate: func(sim *Simulation, character *Character) bool {
-				return true
-			},
 			Spell: character.RegisterSpell(SpellConfig{
 				ActionID: actionID,
 				Flags:    SpellFlagNoOnCastComplete,
-				Cast: CastConfig{
-					CD: Cooldown{
-						Timer:    potionCD,
-						Duration: time.Minute * 1,
-					},
-				},
+				Cast:     potionCast,
 				ApplyEffects: func(sim *Simulation, _ *Unit, _ *Spell) {
 					aura.Activate(sim)
 				},
@@ -942,128 +756,45 @@ func makePotionActivation(potionType proto.Potions, character *Character, potion
 var ConjuredAuraTag = "Conjured"
 
 func registerConjuredCD(agent Agent, consumes *proto.Consumes) {
-	if consumes.DefaultConjured == consumes.StartingConjured {
-		// Starting conjured is redundant in this case.
-		consumes.StartingConjured = proto.Conjured_ConjuredUnknown
-	}
-	if consumes.StartingConjured == proto.Conjured_ConjuredUnknown {
-		consumes.NumStartingConjured = 0
-	}
-	if consumes.NumStartingConjured == 0 {
-		consumes.StartingConjured = proto.Conjured_ConjuredUnknown
-	}
 	character := agent.GetCharacter()
+	conjuredType := consumes.DefaultConjured
 
-	defaultMCD, defaultSpell := makeConjuredActivation(consumes.DefaultConjured, character)
-	startingMCD, startingSpell := makeConjuredActivation(consumes.StartingConjured, character)
-	numStartingConjured := int(consumes.NumStartingConjured)
-	if defaultSpell == nil && startingSpell == nil {
-		return
-	}
-
-	numStartingConjuredUsed := 0
-
-	if startingSpell != nil {
-		character.AddMajorCooldown(MajorCooldown{
-			Spell: startingSpell,
-			Type:  startingMCD.Type,
-			CanActivate: func(sim *Simulation, character *Character) bool {
-				if numStartingConjuredUsed >= numStartingConjured {
-					return false
-				}
-				return startingMCD.CanActivate(sim, character)
-			},
-			ShouldActivate: func(sim *Simulation, character *Character) bool {
-				return startingMCD.ShouldActivate(sim, character)
-			},
-			ActivationFactory: func(sim *Simulation) CooldownActivation {
-				numStartingConjuredUsed = 0
-				return func(sim *Simulation, character *Character) {
-					startingSpell.Cast(sim, nil)
-					numStartingConjuredUsed++
-				}
-			},
-		})
-	}
-
-	if defaultSpell != nil {
-		character.AddMajorCooldown(MajorCooldown{
-			Spell: defaultSpell,
-			Type:  defaultMCD.Type,
-			CanActivate: func(sim *Simulation, character *Character) bool {
-				if numStartingConjuredUsed < numStartingConjured {
-					return false
-				}
-				return defaultMCD.CanActivate(sim, character)
-			},
-			ShouldActivate: func(sim *Simulation, character *Character) bool {
-				return defaultMCD.ShouldActivate(sim, character)
-			},
-			ActivationFactory: func(sim *Simulation) CooldownActivation {
-				expectedManaPerUsage := float64((900 + 600) / 2)
-
-				remainingUsages := int(1 + (MaxDuration(0, sim.Duration))/(darkRuneCD))
-
-				if consumes.DefaultConjured == proto.Conjured_ConjuredDarkRune {
-					character.ExpectedBonusMana += expectedManaPerUsage * float64(remainingUsages)
-				}
-
-				return func(sim *Simulation, character *Character) {
-					defaultSpell.Cast(sim, nil)
-
-					if consumes.DefaultConjured == proto.Conjured_ConjuredDarkRune {
-						// Update expected bonus mana
-						newRemainingUsages := int(sim.GetRemainingDuration() / (darkRuneCD))
-						character.ExpectedBonusMana -= expectedManaPerUsage * float64(remainingUsages-newRemainingUsages)
-						remainingUsages = newRemainingUsages
-					}
-				}
-			},
-		})
-	}
-}
-
-const darkRuneCD = time.Minute * 15
-
-func makeConjuredActivation(conjuredType proto.Conjured, character *Character) (MajorCooldown, *Spell) {
 	if conjuredType == proto.Conjured_ConjuredDarkRune {
 		actionID := ActionID{ItemID: 20520}
 		manaMetrics := character.NewManaMetrics(actionID)
 		// damageTakenManaMetrics := character.NewManaMetrics(ActionID{SpellID: 33776})
-		return MajorCooldown{
-				Type: CooldownTypeMana,
-				CanActivate: func(sim *Simulation, character *Character) bool {
-					return true
-				},
-				ShouldActivate: func(sim *Simulation, character *Character) bool {
-					// Only pop if we have less than the max mana provided by the potion minus 1mp5 tick.
-					totalRegen := character.ManaRegenPerSecondWhileCasting() * 5
-					return character.MaxMana()-(character.CurrentMana()+totalRegen) >= 1500
+		spell := character.RegisterSpell(SpellConfig{
+			ActionID: actionID,
+			Flags:    SpellFlagNoOnCastComplete,
+			Cast: CastConfig{
+				CD: Cooldown{
+					Timer:    character.GetConjuredCD(),
+					Duration: time.Minute * 15,
 				},
 			},
-			character.RegisterSpell(SpellConfig{
-				ActionID: actionID,
-				Flags:    SpellFlagNoOnCastComplete,
-				Cast: CastConfig{
-					CD: Cooldown{
-						Timer:    character.GetConjuredCD(),
-						Duration: darkRuneCD,
-					},
-				},
-				ApplyEffects: func(sim *Simulation, _ *Unit, _ *Spell) {
-					// Restores 900 to 1500 mana. (2 Min Cooldown)
-					manaGain := 900 + (sim.RandomFloat("dark rune") * 600)
-					character.AddMana(sim, manaGain, manaMetrics, true)
+			ApplyEffects: func(sim *Simulation, _ *Unit, _ *Spell) {
+				// Restores 900 to 1500 mana. (2 Min Cooldown)
+				manaGain := sim.RollWithLabel(900, 1500, "dark rune")
+				character.AddMana(sim, manaGain, manaMetrics)
 
-					// if character.Class == proto.Class_ClassPaladin {
-					// 	// Paladins gain extra mana from self-inflicted damage
-					// 	// TO-DO: It is possible for damage to be resisted or to crit
-					// 	// This would affect mana returns for Paladins
-					// 	manaFromDamage := manaGain * 2.0 / 3.0 * 0.1
-					// 	character.AddMana(sim, manaFromDamage, damageTakenManaMetrics, false)
-					// }
-				},
-			})
+				// if character.Class == proto.Class_ClassPaladin {
+				// 	// Paladins gain extra mana from self-inflicted damage
+				// 	// TO-DO: It is possible for damage to be resisted or to crit
+				// 	// This would affect mana returns for Paladins
+				// 	manaFromDamage := manaGain * 2.0 / 3.0 * 0.1
+				// 	character.AddMana(sim, manaFromDamage, damageTakenManaMetrics, false)
+				// }
+			},
+		})
+		character.AddMajorCooldown(MajorCooldown{
+			Spell: spell,
+			Type:  CooldownTypeMana,
+			ShouldActivate: func(sim *Simulation, character *Character) bool {
+				// Only pop if we have less than the max mana provided by the potion minus 1mp5 tick.
+				totalRegen := character.ManaRegenPerSecondWhileCasting() * 5
+				return character.MaxMana()-(character.CurrentMana()+totalRegen) >= 1500
+			},
+		})
 	} else if conjuredType == proto.Conjured_ConjuredFlameCap {
 		actionID := ActionID{ItemID: 22788}
 
@@ -1103,67 +834,56 @@ func makeConjuredActivation(conjuredType proto.Conjured, character *Character) (
 					spell.BonusSpellPower -= 80
 				}
 			},
+			OnSpellHitDealt: func(aura *Aura, sim *Simulation, spell *Spell, result *SpellResult) {
+				if !result.Landed() || !spell.ProcMask.Matches(ProcMaskMeleeOrRanged) {
+					return
+				}
+				if sim.RandomFloat("Flame Cap Melee") > procChance {
+					return
+				}
+
+				flameCapProc.Cast(sim, result.Target)
+			},
 		})
-		flameCapAura.OnSpellHitDealt = func(aura *Aura, sim *Simulation, spell *Spell, result *SpellResult) {
-			if !result.Landed() || !spell.ProcMask.Matches(ProcMaskMeleeOrRanged) {
-				return
-			}
-			if sim.RandomFloat("Flame Cap Melee") > procChance {
-				return
-			}
 
-			flameCapProc.Cast(sim, result.Target)
-		}
-
-		return MajorCooldown{
-				Type: CooldownTypeDPS,
-				CanActivate: func(sim *Simulation, character *Character) bool {
-					return true
-				},
-				ShouldActivate: func(sim *Simulation, character *Character) bool {
-					return true
+		spell := character.RegisterSpell(SpellConfig{
+			ActionID: actionID,
+			Flags:    SpellFlagNoOnCastComplete,
+			Cast: CastConfig{
+				CD: Cooldown{
+					Timer:    character.GetConjuredCD(),
+					Duration: time.Minute * 3,
 				},
 			},
-			character.RegisterSpell(SpellConfig{
-				ActionID: actionID,
-				Flags:    SpellFlagNoOnCastComplete,
-				Cast: CastConfig{
-					CD: Cooldown{
-						Timer:    character.GetConjuredCD(),
-						Duration: time.Minute * 3,
-					},
-				},
-				ApplyEffects: func(sim *Simulation, _ *Unit, _ *Spell) {
-					flameCapAura.Activate(sim)
-				},
-			})
+			ApplyEffects: func(sim *Simulation, _ *Unit, _ *Spell) {
+				flameCapAura.Activate(sim)
+			},
+		})
+		character.AddMajorCooldown(MajorCooldown{
+			Spell: spell,
+			Type:  CooldownTypeDPS,
+		})
 	} else if conjuredType == proto.Conjured_ConjuredHealthstone {
 		actionID := ActionID{ItemID: 36892}
 		healthMetrics := character.NewHealthMetrics(actionID)
-		return MajorCooldown{
-				Type: CooldownTypeSurvival,
-				CanActivate: func(sim *Simulation, character *Character) bool {
-					return true
-				},
-				ShouldActivate: func(sim *Simulation, character *Character) bool {
-					return true
+
+		spell := character.RegisterSpell(SpellConfig{
+			ActionID: actionID,
+			Flags:    SpellFlagNoOnCastComplete,
+			Cast: CastConfig{
+				CD: Cooldown{
+					Timer:    character.GetConjuredCD(),
+					Duration: time.Minute * 2,
 				},
 			},
-			character.RegisterSpell(SpellConfig{
-				ActionID: actionID,
-				Flags:    SpellFlagNoOnCastComplete,
-				Cast: CastConfig{
-					CD: Cooldown{
-						Timer:    character.GetConjuredCD(),
-						Duration: time.Minute * 2,
-					},
-				},
-				ApplyEffects: func(sim *Simulation, _ *Unit, _ *Spell) {
-					character.GainHealth(sim, 4280*character.PseudoStats.HealingTakenMultiplier, healthMetrics)
-				},
-			})
-	} else {
-		return MajorCooldown{}, nil
+			ApplyEffects: func(sim *Simulation, _ *Unit, _ *Spell) {
+				character.GainHealth(sim, 4280*character.PseudoStats.HealingTakenMultiplier, healthMetrics)
+			},
+		})
+		character.AddMajorCooldown(MajorCooldown{
+			Spell: spell,
+			Type:  CooldownTypeSurvival,
+		})
 	}
 }
 
@@ -1245,9 +965,9 @@ func (character *Character) newBasicExplosiveSpellConfig(sharedTimer *Timer, act
 		ThreatMultiplier: 1,
 
 		ApplyEffects: func(sim *Simulation, target *Unit, spell *Spell) {
-			for _, aoeTarget := range sim.Encounter.Targets {
+			for _, aoeTarget := range sim.Encounter.TargetUnits {
 				baseDamage := sim.Roll(minDamage, maxDamage) * sim.Encounter.AOECapMultiplier()
-				spell.CalcAndDealDamage(sim, &aoeTarget.Unit, baseDamage, spell.OutcomeMagicHitAndCrit)
+				spell.CalcAndDealDamage(sim, aoeTarget, baseDamage, spell.OutcomeMagicHitAndCrit)
 			}
 
 			if dealSelfDamage {

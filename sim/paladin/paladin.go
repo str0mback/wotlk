@@ -31,6 +31,7 @@ type Paladin struct {
 	Exorcism              *core.Spell
 	HolyShield            *core.Spell
 	HammerOfTheRighteous  *core.Spell
+	HandOfReckoning       *core.Spell
 	ShieldOfRighteousness *core.Spell
 	AvengersShield        *core.Spell
 	JudgementOfWisdom     *core.Spell
@@ -41,14 +42,12 @@ type Paladin struct {
 	SealOfCommand         *core.Spell
 	AvengingWrath         *core.Spell
 	DivineProtection      *core.Spell
+	SovDotSpell           *core.Spell
 	// SealOfWisdom        *core.Spell
 	// SealOfLight         *core.Spell
 
-	ConsecrationDot     *core.Dot
-	SealOfVengeanceDots []*core.Dot
-
-	HolyShieldAura *core.Aura
-	// RighteousFuryAura       *core.Aura
+	HolyShieldAura          *core.Aura
+	RighteousFuryAura       *core.Aura
 	DivinePleaAura          *core.Aura
 	JudgementOfWisdomAura   *core.Aura
 	JudgementOfLightAura    *core.Aura
@@ -58,6 +57,7 @@ type Paladin struct {
 	AvengingWrathAura       *core.Aura
 	DivineProtectionAura    *core.Aura
 	ForbearanceAura         *core.Aura
+	VengeanceAura           *core.Aura
 
 	// SealOfWisdomAura        *core.Aura
 	// SealOfLightAura         *core.Aura
@@ -144,6 +144,7 @@ func (paladin *Paladin) Initialize() {
 	paladin.registerExorcismSpell()
 	paladin.registerHolyShieldSpell()
 	paladin.registerHammerOfTheRighteousSpell()
+	paladin.registerHandOfReckoningSpell()
 	paladin.registerShieldOfRighteousnessSpell()
 	paladin.registerAvengersShieldSpell()
 	paladin.registerJudgements()
@@ -152,11 +153,6 @@ func (paladin *Paladin) Initialize() {
 	paladin.registerDivinePleaSpell()
 	paladin.registerDivineProtectionSpell()
 	paladin.registerForbearanceDebuff()
-
-	paladin.SealOfVengeanceDots = make([]*core.Dot, paladin.Env.GetNumTargets())
-	for i := range paladin.SealOfVengeanceDots {
-		paladin.SealOfVengeanceDots[i] = paladin.createSealOfVengeanceDot(paladin.Env.GetTargetUnit(int32(i)))
-	}
 
 	for i := int32(0); i < paladin.Env.GetNumTargets(); i++ {
 		unit := paladin.Env.GetTargetUnit(i)
@@ -202,6 +198,9 @@ func NewPaladin(character core.Character, talentsStr string) *Paladin {
 
 	// Paladins get 1 block value per 2 str
 	paladin.AddStatDependency(stats.Strength, stats.BlockValue, .5)
+
+	// Bonus Armor and Armor are treated identically for Paladins
+	paladin.AddStatDependency(stats.BonusArmor, stats.Armor, 1)
 
 	// Base dodge is unaffected by Diminishing Returns
 	paladin.PseudoStats.BaseDodge += 0.0327

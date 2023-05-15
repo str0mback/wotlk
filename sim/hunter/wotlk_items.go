@@ -85,7 +85,8 @@ var ItemSetScourgestalkerBattlegear = core.NewItemSet(core.ItemSet{
 })
 
 var ItemSetWindrunnersPursuit = core.NewItemSet(core.ItemSet{
-	Name: "Windrunner's Pursuit",
+	Name:            "Windrunner's Pursuit",
+	AlternativeName: "Windrunner's Battlegear",
 	Bonuses: map[int32]core.ApplyEffect{
 		2: func(agent core.Agent) {
 		},
@@ -243,8 +244,9 @@ func init() {
 				ProcMask:   core.ProcMaskRanged,
 				Outcome:    core.OutcomeLanded,
 				ProcChance: procChance,
-				Handler: func(sim *core.Simulation, _ *core.Spell, _ *core.SpellResult) {
-					rangedSpell.Cast(sim, hunter.CurrentTarget)
+				ActionID:   core.ActionID{ItemID: itemID},
+				Handler: func(sim *core.Simulation, _ *core.Spell, result *core.SpellResult) {
+					rangedSpell.Cast(sim, result.Target)
 				},
 			})
 			triggerAura.OnInit = func(aura *core.Aura, sim *core.Simulation) {

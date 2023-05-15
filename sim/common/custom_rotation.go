@@ -59,8 +59,9 @@ func NewCustomRotation(crProto *proto.CustomRotation, character *core.Character,
 			}
 		}
 		if customSpell.Condition == nil {
+			spell := customSpell.Spell
 			customSpell.Condition = func(sim *core.Simulation) bool {
-				return true
+				return spell.CanCast(sim, character.CurrentTarget)
 			}
 		}
 		if customSpell.Action != nil {
@@ -119,6 +120,10 @@ func (cs *CustomSpell) CPM(sim *core.Simulation) float64 {
 }
 
 func (cr *CustomRotation) Cast(sim *core.Simulation) bool {
+	if cr == nil {
+		panic("Custom Rotation is empty")
+	}
+
 	spell := cr.ChooseSpell(sim)
 
 	if spell == nil {

@@ -1,7 +1,6 @@
 package hunter
 
 import (
-	"strconv"
 	"time"
 
 	"github.com/wowsims/wotlk/sim/core"
@@ -188,7 +187,7 @@ func (hunter *Hunter) applyInvigoration() {
 			}
 
 			if sim.Proc(procChance, "Invigoration") {
-				hunter.AddMana(sim, 0.01*hunter.MaxMana(), manaMetrics, false)
+				hunter.AddMana(sim, 0.01*hunter.MaxMana(), manaMetrics)
 			}
 		},
 	})
@@ -209,13 +208,13 @@ func (hunter *Hunter) applyCobraStrikes() {
 		MaxStacks: 2,
 		OnGain: func(aura *core.Aura, sim *core.Simulation) {
 			hunter.pet.focusDump.BonusCritRating += 100 * core.CritRatingPerCritChance
-			if !hunter.pet.specialAbility.IsEmpty() {
+			if hunter.pet.specialAbility != nil {
 				hunter.pet.specialAbility.BonusCritRating += 100 * core.CritRatingPerCritChance
 			}
 		},
 		OnExpire: func(aura *core.Aura, sim *core.Simulation) {
 			hunter.pet.focusDump.BonusCritRating -= 100 * core.CritRatingPerCritChance
-			if !hunter.pet.specialAbility.IsEmpty() {
+			if hunter.pet.specialAbility != nil {
 				hunter.pet.specialAbility.BonusCritRating -= 100 * core.CritRatingPerCritChance
 			}
 		},
@@ -254,11 +253,8 @@ func (hunter *Hunter) applyPiercingShots() {
 		return
 	}
 
-	actionID := core.ActionID{SpellID: 53238}
-
-	var psDot *core.Dot
 	psSpell := hunter.RegisterSpell(core.SpellConfig{
-		ActionID:    actionID,
+		ActionID:    core.ActionID{SpellID: 53238},
 		SpellSchool: core.SpellSchoolPhysical,
 		ProcMask:    core.ProcMaskEmpty,
 		Flags:       core.SpellFlagNoOnCastComplete | core.SpellFlagIgnoreModifiers,
@@ -266,26 +262,23 @@ func (hunter *Hunter) applyPiercingShots() {
 		DamageMultiplier: 1,
 		ThreatMultiplier: 1,
 
-		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
-			psDot.ApplyOrReset(sim)
-			spell.CalcAndDealOutcome(sim, target, spell.OutcomeAlwaysHit)
+		Dot: core.DotConfig{
+			Aura: core.Aura{
+				Label:    "PiercingShots",
+				Duration: time.Second * 8,
+			},
+			NumberOfTicks: 8,
+			TickLength:    time.Second * 1,
+			OnTick: func(sim *core.Simulation, target *core.Unit, dot *core.Dot) {
+				// Specifically account for bleed modifiers, since it still affects the spell, but we're ignoring all modifiers.
+				dot.SnapshotAttackerMultiplier = target.PseudoStats.PeriodicPhysicalDamageTakenMultiplier
+				dot.CalcAndDealPeriodicSnapshotDamage(sim, target, dot.OutcomeTick)
+			},
 		},
-	})
 
-	target := hunter.CurrentTarget
-	psDot = core.NewDot(core.Dot{
-		Spell: psSpell,
-		Aura: target.GetOrRegisterAura(core.Aura{
-			Label:    "PiercingShots-" + strconv.Itoa(int(hunter.Index)),
-			ActionID: actionID,
-			Duration: time.Second * 8,
-		}),
-		NumberOfTicks: 8,
-		TickLength:    time.Second * 1,
-		OnTick: func(sim *core.Simulation, target *core.Unit, dot *core.Dot) {
-			// Specifically account for bleed modifiers, since it still affects the spell, but we're ignoring all modifiers.
-			dot.SnapshotAttackerMultiplier = target.PseudoStats.PeriodicPhysicalDamageTakenMultiplier
-			dot.CalcAndDealPeriodicSnapshotDamage(sim, target, dot.OutcomeTick)
+		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
+			spell.Dot(target).ApplyOrReset(sim)
+			spell.CalcAndDealOutcome(sim, target, spell.OutcomeAlwaysHit)
 		},
 	})
 
@@ -303,14 +296,11 @@ func (hunter *Hunter) applyPiercingShots() {
 				return
 			}
 
-			var outstandingDamage float64
-			if psDot.IsActive() {
-				outstandingDamage = psDot.SnapshotBaseDamage * float64(psDot.NumberOfTicks-psDot.TickCount)
-			}
-
+			dot := psSpell.Dot(result.Target)
+			outstandingDamage := core.TernaryFloat64(dot.IsActive(), dot.SnapshotBaseDamage*float64(dot.NumberOfTicks-dot.TickCount), 0)
 			newDamage := result.Damage * 0.1 * float64(hunter.Talents.PiercingShots)
 
-			psDot.SnapshotBaseDamage = (outstandingDamage + newDamage) / float64(psDot.NumberOfTicks)
+			dot.SnapshotBaseDamage = (outstandingDamage + newDamage) / float64(dot.NumberOfTicks)
 			psSpell.Cast(sim, result.Target)
 		},
 	})
@@ -442,6 +432,7 @@ func (hunter *Hunter) registerBestialWrathCD() {
 			aura.Unit.PseudoStats.CostMultiplier += 0.5
 		},
 	})
+	core.RegisterPercentDamageModifierEffect(bestialWrathAura, 1.1)
 
 	bwSpell := hunter.RegisterSpell(core.SpellConfig{
 		ActionID: actionID,
@@ -468,9 +459,6 @@ func (hunter *Hunter) registerBestialWrathCD() {
 	hunter.AddMajorCooldown(core.MajorCooldown{
 		Spell: bwSpell,
 		Type:  core.CooldownTypeDPS,
-		CanActivate: func(sim *core.Simulation, character *core.Character) bool {
-			return hunter.CurrentMana() >= bwSpell.DefaultCast.Cost
-		},
 	})
 }
 
@@ -525,7 +513,7 @@ func (hunter *Hunter) applyImprovedTracking() {
 			}
 			applied = true
 
-			for _, target := range hunter.Env.Encounter.Targets {
+			for _, target := range hunter.Env.Encounter.TargetUnits {
 				switch target.MobType {
 				case proto.MobType_MobTypeBeast, proto.MobType_MobTypeDemon,
 					proto.MobType_MobTypeDragonkin, proto.MobType_MobTypeElemental,
@@ -586,7 +574,7 @@ func (hunter *Hunter) applyLockAndLoad() {
 			aura.Activate(sim)
 		},
 		OnPeriodicDamageDealt: func(aura *core.Aura, sim *core.Simulation, spell *core.Spell, result *core.SpellResult) {
-			if spell != hunter.BlackArrow && spell != hunter.ExplosiveTrapDot.Spell {
+			if spell != hunter.BlackArrow && spell != hunter.ExplosiveTrap {
 				return
 			}
 
@@ -628,14 +616,14 @@ func (hunter *Hunter) applyThrillOfTheHunt() {
 			}
 
 			if sim.Proc(procChance, "ThrillOfTheHunt") {
-				hunter.AddMana(sim, spell.CurCast.Cost*0.4, manaMetrics, false)
+				hunter.AddMana(sim, spell.CurCast.Cost*0.4, manaMetrics)
 			}
 		},
 		OnPeriodicDamageDealt: func(aura *core.Aura, sim *core.Simulation, spell *core.Spell, result *core.SpellResult) {
 			if result.DidCrit() && (spell == hunter.ExplosiveShotR4 || spell == hunter.ExplosiveShotR3) {
 				// Explosive shot ticks can proc TotH but with 1/3 the bonus.
 				if sim.Proc(procChance, "ThrillOfTheHunt") {
-					hunter.AddMana(sim, spell.CurCast.Cost*0.4/3, manaMetrics, false)
+					hunter.AddMana(sim, spell.CurCast.Cost*0.4/3, manaMetrics)
 				}
 			}
 		},
@@ -772,7 +760,7 @@ func (hunter *Hunter) applySniperTraining() {
 		},
 	})
 
-	core.ApplyFixedUptimeAura(stAura, uptime, time.Second*15)
+	core.ApplyFixedUptimeAura(stAura, uptime, time.Second*15, 1)
 }
 
 func (hunter *Hunter) applyHuntingParty() {
@@ -825,6 +813,10 @@ func (hunter *Hunter) registerReadinessCD() {
 				Duration: time.Minute * 3,
 			},
 		},
+		ExtraCastCondition: func(sim *core.Simulation, target *core.Unit) bool {
+			// Don't use if there are no cooldowns to reset.
+			return !hunter.RapidFire.IsReady(sim)
+		},
 
 		ApplyEffects: func(sim *core.Simulation, _ *core.Unit, _ *core.Spell) {
 			hunter.RapidFire.CD.Reset()
@@ -863,11 +855,11 @@ func (hunter *Hunter) registerReadinessCD() {
 	hunter.AddMajorCooldown(core.MajorCooldown{
 		Spell: readinessSpell,
 		Type:  core.CooldownTypeDPS,
-		CanActivate: func(sim *core.Simulation, character *core.Character) bool {
-			// Don't use if there are no cooldowns to reset.
-			return !hunter.RapidFire.IsReady(sim)
-		},
 		ShouldActivate: func(sim *core.Simulation, character *core.Character) bool {
+			// If RF is about to become ready naturally, wait so we can get 2x usages.
+			if !hunter.RapidFire.IsReady(sim) && hunter.RapidFire.TimeToReady(sim) < time.Second*10 {
+				return false
+			}
 			return !hunter.RapidFireAura.IsActive() || hunter.RapidFireAura.RemainingDuration(sim) < time.Second*10
 		},
 	})

@@ -1,155 +1,188 @@
 @use "sass:map";
 
 @import "./filters_menu";
-@import "./popup";
-
-.item-swap-picker-root {
-  .picker-group {
-    align-items: center;
-    justify-content: flex-end;
-
-    &> * {
-      margin-bottom: 0 !important;
-    }
-
-    &> :last-child {
-      margin-right: 0;
-    }
-  }  
-}
 
 .gear-picker-root {
   display: flex;
   flex-wrap: wrap;
-  min-width: 275px;
-}
+  width: 100%;
 
-.gear-picker-left, .gear-picker-right {
-  width: 50%;
-  flex: 1;
-  min-width: 275px;
-}
+  .gear-picker-left,
+  .gear-picker-right {
+    width: 50%;
+  }
 
-.item-picker-root {
-  display: flex;
-  margin-bottom: map.get($spacers, 2);
-}
-
-.gear-picker-left {
   .item-picker-root {
-    flex-direction: row;
-    text-align: left;
+    display: flex;
 
-    &:nth-child(6) {
-      margin-bottom: map.get($spacers, 5);
+    &:not(:last-child) {
+      margin-bottom: $block-spacer;
+    }
+
+    .item-picker-icon {
+      @include wowhead-background-icon;
+      width: 4rem;
+      height: 4rem;
+      border: 1px solid $border-color;
     }
   }
-}
 
-.gear-picker-right {
-  .item-picker-root {
-    flex-direction: row-reverse;
-    text-align: right;
+  .gear-picker-left {
+    .item-picker-root {
+      flex-direction: row;
+      text-align: left;
+  
+      // Add space to separate weapon categories
+      &:nth-child(6) {
+        margin-bottom: map.get($spacers, 5);
+      }
+    }
   }
-}
 
-@media only screen and (max-width: calc(800px + 1vw)) {
   .gear-picker-right {
     .item-picker-root {
-      text-align: left;
-      flex-direction: row;
+      flex-direction: row-reverse;
+      text-align: right;
     }
   }
-}
-
-.item-picker-icon {
-  @include wowhead-background-icon;
-  width: 64px;
-  height: 64px;
-  border: 2px solid dimgray;
 }
 
 .item-picker-sockets-container {
   @include vertical-bottom;
   @include horizontal-center;
   width: 100%;
-  text-align: center;
+  display: flex;
+  justify-content: center;
 }
 
-.item-picker-gem-icon {
-  @include wowhead-background-icon;
-  width: 28%;
-  margin: 1px;
+.selector-modal {
+  .modal-header {
+    padding-bottom: 0;
+
+    .selector-modal-tabs {
+      border-bottom: 0;
+
+      .selector-modal-tab-gem {
+        height: 100%;
+        padding: 0;
+        padding: calc(var(--bs-nav-link-padding-y) / 2) calc(var(--bs-nav-link-padding-x) / 2);
+        margin-left: calc(var(--bs-nav-link-padding-x) / 2);
+        margin-right: calc(var(--bs-nav-link-padding-x) / -2);
+        display: flex;
+        align-items: center;
+        opacity: .7;
+        transition: opacity .15s ease-in-out;
+
+        &:hover, &.active {
+          opacity: 1;
+        }
+
+        .gem-socket-container {
+          --gem-width: 2rem;
+        }
+      }
+    }
+  }
+}
+
+@include media-breakpoint-down(xl) {
+  .gear-picker-right {
+    margin-bottom: 2 * map.get($spacers, 3);
+  }
+}
+
+@include media-breakpoint-down(md) {
+  .gear-picker-root {
+    .gear-picker-left {
+      .item-picker-root:last-child {
+        margin-bottom: map.get($spacers, 5);
+      }
+    }
+
+    .gear-picker-right {
+      .item-picker-root {
+        flex-direction: row;
+        text-align: left;
+      }
+    }
+  }
 }
 
 .item-picker-labels-container {
-  padding: .5rem;
-	text-shadow: 2px 2px 4px black;
+  padding: map.get($spacers, 2);
   flex: 1;
+
+  .item-picker-name {
+    color: white;
+    font-size: map.get($font-sizes, 6);
+    letter-spacing: normal;
+  }
+  
+  .item-picker-enchant {
+    color: $item-quality-uncommon;
+    font-size: $content-font-size;
+    letter-spacing: normal;
+  }
 }
 
-.item-picker-name {
-	letter-spacing: normal;
-	color: white;
-  font-size: map.get($font-sizes, 6);
-}
-.item-picker-name:hover {
-	color: white;
+@include media-breakpoint-down(md) {
+  .gear-picker-root {
+    .gear-picker-left {
+      .item-picker-root:last-child {
+        margin-bottom: map.get($spacers, 5);
+      }
+    }
+
+    .gear-picker-right {
+      .item-picker-root {
+        flex-direction: row;
+        text-align: left;
+      }
+    }
+  }
 }
 
-.item-picker-enchant {
-  font-size: $content-font-size;
-  color: lawngreen;
-	letter-spacing: normal;
-}
-.item-picker-enchant:hover {
-  color: lawngreen;
-  cursor: pointer;
+.item-picker-labels-container {
+  padding: map.get($spacers, 2);
+  flex: 1;
+
+  .item-picker-name {
+    color: white;
+    font-size: map.get($font-sizes, 6);
+    letter-spacing: normal;
+  }
+  
+  .item-picker-enchant {
+    color: $item-quality-uncommon;
+    font-size: $content-font-size;
+    letter-spacing: normal;
+  }
 }
 
 .selector-modal-tab-content {
   .selector-modal-tab-pane {
     padding: 0;
   
-    .selector-modal-tab-content-header {
-      margin: map.get($spacers, 3) 0;
+    .selector-modal-filters {
+      margin-bottom: map.get($spacers, 3);
       display: flex;
       align-items: center;
 
       &> *:not(:last-child) {
         margin-right: map.get($spacers, 2);
       }
+
+      input, select {
+        padding-top: $btn-padding-y;
+        padding-bottom: $btn-padding-y;
+        font-size: $btn-font-size;
+      }
     }
   }
 }
 
-.selector-modal-tab-gem-icon {
-  @include wowhead-background-icon;
-  width: 35px;
-  height: 35px;
-  background-size: 35px !important;
-}
-
-.selector-modal-tab-gem-icon:hover, li.active>.selector-modal-tab-gem-icon {
-	box-shadow:
-			0 0 10px white,
-			0 0 10px white,
-			0 0 10px white;
-}
-
 .selector-modal-search {
-	max-width: 15rem;
-}
-
-.selector-modal-boolean-option {
-	margin: 5px;
-}
-.selector-modal-boolean-option .input-label {
-	font-weight: bold;
-	margin: 0;
-}
-.selector-modal-boolean-option .boolean-picker-input {
-	width: 10px;
+	max-width: 12rem;
 }
 
 .selector-modal-phase-selector {
@@ -210,6 +243,12 @@
   cursor: pointer;
   margin-left: 10px;
 	letter-spacing: normal;
+}
+
+.selector-modal-list-item-source-container {
+	margin: 0 10px;
+	width: 300px;
+	font-size: 11px;
 }
 
 .selector-modal-list-item-favorite {

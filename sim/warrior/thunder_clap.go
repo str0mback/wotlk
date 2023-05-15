@@ -8,10 +8,9 @@ import (
 )
 
 func (warrior *Warrior) registerThunderClapSpell() {
-	warrior.ThunderClapAuras = make([]*core.Aura, warrior.Env.GetNumTargets())
-	for _, target := range warrior.Env.Encounter.Targets {
-		warrior.ThunderClapAuras[target.Index] = core.ThunderClapAura(&target.Unit, warrior.Talents.ImprovedThunderClap)
-	}
+	warrior.ThunderClapAuras = warrior.NewEnemyAuraArray(func(target *core.Unit) *core.Aura {
+		return core.ThunderClapAura(target, warrior.Talents.ImprovedThunderClap)
+	})
 
 	warrior.ThunderClap = warrior.RegisterSpell(core.SpellConfig{
 		ActionID:    core.ActionID{SpellID: 47502},
@@ -35,8 +34,12 @@ func (warrior *Warrior) registerThunderClapSpell() {
 				Duration: time.Second * 6,
 			},
 		},
+		ExtraCastCondition: func(sim *core.Simulation, target *core.Unit) bool {
+			return warrior.StanceMatches(BattleStance | DefensiveStance)
+		},
 
-		BonusCritRating:  float64(warrior.Talents.Incite) * 5 * core.CritRatingPerCritChance,
+		// Cruelty doesn't apply to Thunder Clap
+		BonusCritRating:  (float64(warrior.Talents.Incite)*5 - float64(warrior.Talents.Cruelty)*1) * core.CritRatingPerCritChance,
 		DamageMultiplier: []float64{1.0, 1.1, 1.2, 1.3}[warrior.Talents.ImprovedThunderClap],
 		CritMultiplier:   warrior.critMultiplier(none),
 		ThreatMultiplier: 1.85,
@@ -45,27 +48,24 @@ func (warrior *Warrior) registerThunderClapSpell() {
 			baseDamage := 300 + 0.12*spell.MeleeAttackPower()
 			baseDamage *= sim.Encounter.AOECapMultiplier()
 
-			for _, aoeTarget := range sim.Encounter.Targets {
-				result := spell.CalcAndDealDamage(sim, &aoeTarget.Unit, baseDamage, spell.OutcomeRangedHitAndCrit)
+			for _, aoeTarget := range sim.Encounter.TargetUnits {
+				result := spell.CalcAndDealDamage(sim, aoeTarget, baseDamage, spell.OutcomeRangedHitAndCrit)
 				if result.Landed() {
-					warrior.ThunderClapAuras[aoeTarget.Index].Activate(sim)
+					warrior.ThunderClapAuras.Get(aoeTarget).Activate(sim)
 				}
 			}
 		},
 	})
 }
 
-func (warrior *Warrior) CanThunderClap(sim *core.Simulation) bool {
-	return warrior.StanceMatches(BattleStance|DefensiveStance) && warrior.CanThunderClapIgnoreStance(sim)
-}
 func (warrior *Warrior) CanThunderClapIgnoreStance(sim *core.Simulation) bool {
 	return warrior.CurrentRage() >= warrior.ThunderClap.DefaultCast.Cost && warrior.ThunderClap.IsReady(sim)
 }
 
-func (warrior *Warrior) ShouldThunderClap(sim *core.Simulation, filler bool, maintainOnly bool, ignoreStance bool) bool {
+func (warrior *Warrior) ShouldThunderClap(sim *core.Simulation, target *core.Unit, filler bool, maintainOnly bool, ignoreStance bool) bool {
 	if ignoreStance && !warrior.CanThunderClapIgnoreStance(sim) {
 		return false
-	} else if !ignoreStance && !warrior.CanThunderClap(sim) {
+	} else if !ignoreStance && !warrior.ThunderClap.CanCast(sim, target) {
 		return false
 	}
 
@@ -74,5 +74,5 @@ func (warrior *Warrior) ShouldThunderClap(sim *core.Simulation, filler bool, mai
 	}
 
 	return maintainOnly &&
-		warrior.ThunderClapAuras[warrior.CurrentTarget.Index].ShouldRefreshExclusiveEffects(sim, time.Second*2)
+		warrior.ThunderClapAuras.Get(target).ShouldRefreshExclusiveEffects(sim, time.Second*2)
 }

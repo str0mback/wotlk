@@ -1,7 +1,6 @@
 package priest
 
 import (
-	"strconv"
 	"time"
 
 	"github.com/wowsims/wotlk/sim/core"
@@ -64,7 +63,7 @@ var ItemSetConquerorSanct = core.NewItemSet(core.ItemSet{
 		},
 		4: func(agent core.Agent) {
 			priest := agent.(PriestAgent).GetPriest()
-			procAura := priest.NewTemporaryStatsAura("Devious Mind", core.ActionID{ItemID: 64907}, stats.Stats{stats.SpellHaste: 240}, time.Second*4)
+			procAura := priest.NewTemporaryStatsAura("Devious Mind", core.ActionID{SpellID: 64907}, stats.Stats{stats.SpellHaste: 240}, time.Second*4)
 
 			priest.RegisterAura(core.Aura{
 				Label:    "Devious Mind Proc",
@@ -110,7 +109,8 @@ var ItemSetSanctificationRegalia = core.NewItemSet(core.ItemSet{
 })
 
 var ItemSetZabras = core.NewItemSet(core.ItemSet{
-	Name: "Zabra's Regalia",
+	Name:            "Zabra's Regalia",
+	AlternativeName: "Velen's Regalia",
 	Bonuses: map[int32]core.ApplyEffect{
 		2: func(agent core.Agent) {
 			// Implemented in vampiric_touch.go
@@ -152,7 +152,8 @@ var ItemSetCrimsonAcolytesRaiment = core.NewItemSet(core.ItemSet{
 		2: func(agent core.Agent) {
 			priest := agent.(PriestAgent).GetPriest()
 
-			spell := priest.RegisterSpell(core.SpellConfig{
+			var curAmount float64
+			procSpell := priest.RegisterSpell(core.SpellConfig{
 				ActionID:    core.ActionID{SpellID: 70770},
 				SpellSchool: core.SpellSchoolHoly,
 				ProcMask:    core.ProcMaskEmpty,
@@ -160,13 +161,11 @@ var ItemSetCrimsonAcolytesRaiment = core.NewItemSet(core.ItemSet{
 
 				DamageMultiplier: 1,
 				ThreatMultiplier: 1 - []float64{0, .07, .14, .20}[priest.Talents.SilentResolve],
-			})
 
-			var curAmount float64
-			hots := core.NewAllyHotArray(
-				&priest.Unit,
-				core.Dot{
-					Spell:         spell,
+				Hot: core.DotConfig{
+					Aura: core.Aura{
+						Label: "CrimsonAcolyteRaiment2pc",
+					},
 					NumberOfTicks: 3,
 					TickLength:    time.Second * 3,
 					OnSnapshot: func(sim *core.Simulation, target *core.Unit, dot *core.Dot, _ bool) {
@@ -177,10 +176,7 @@ var ItemSetCrimsonAcolytesRaiment = core.NewItemSet(core.ItemSet{
 						dot.CalcAndDealPeriodicSnapshotHealing(sim, target, dot.OutcomeTick)
 					},
 				},
-				core.Aura{
-					Label:    "CrimsonAcolyteRaiment2pc" + strconv.Itoa(int(priest.Index)),
-					ActionID: spell.ActionID,
-				})
+			})
 
 			priest.RegisterAura(core.Aura{
 				Label:    "Crimson Acolytes Raiment 2pc",
@@ -194,7 +190,7 @@ var ItemSetCrimsonAcolytesRaiment = core.NewItemSet(core.ItemSet{
 					}
 
 					curAmount = result.Damage
-					hot := hots[result.Target.UnitIndex]
+					hot := procSpell.Hot(result.Target)
 					hot.Apply(sim)
 				},
 			})

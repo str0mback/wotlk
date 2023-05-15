@@ -1,8 +1,6 @@
 package warrior
 
 import (
-	"time"
-
 	"github.com/wowsims/wotlk/sim/core"
 	"github.com/wowsims/wotlk/sim/core/proto"
 )
@@ -10,32 +8,6 @@ import (
 func (warrior *Warrior) registerDevastateSpell() {
 	if !warrior.Talents.Devastate {
 		return
-	}
-
-	if warrior.Talents.SwordAndBoard > 0 {
-		warrior.SwordAndBoardAura = warrior.GetOrRegisterAura(core.Aura{
-			Label:    "Sword And Board",
-			ActionID: core.ActionID{SpellID: 46953},
-			Duration: 5 * time.Second,
-		})
-
-		core.MakePermanent(warrior.GetOrRegisterAura(core.Aura{
-			Label: "Sword And Board Trigger",
-			OnSpellHitDealt: func(aura *core.Aura, sim *core.Simulation, spell *core.Spell, result *core.SpellResult) {
-				if !result.Landed() {
-					return
-				}
-
-				if !(spell == warrior.Revenge || spell == warrior.Devastate) {
-					return
-				}
-
-				if sim.RandomFloat("Sword And Board") <= 0.1*float64(warrior.Talents.SwordAndBoard) {
-					warrior.SwordAndBoardAura.Activate(sim)
-					warrior.ShieldSlam.CD.Reset()
-				}
-			},
-		}))
 	}
 
 	hasGlyph := warrior.HasMajorGlyph(proto.WarriorMajorGlyph_GlyphOfDevastate)
@@ -61,6 +33,9 @@ func (warrior *Warrior) registerDevastateSpell() {
 			},
 			IgnoreHaste: true,
 		},
+		ExtraCastCondition: func(sim *core.Simulation, target *core.Unit) bool {
+			return warrior.CanApplySunderAura(target)
+		},
 
 		BonusCritRating: 5*core.CritRatingPerCritChance*float64(warrior.Talents.SwordAndBoard) +
 			core.TernaryFloat64(warrior.HasSetBonus(ItemSetSiegebreakerPlate, 2), 10*core.CritRatingPerCritChance, 0),
@@ -73,7 +48,7 @@ func (warrior *Warrior) registerDevastateSpell() {
 		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
 			// Bonus 242 damage / stack of sunder. Counts stacks AFTER cast but only if stacks > 0.
 			sunderBonus := 0.0
-			saStacks := warrior.SunderArmorAura.GetStacks()
+			saStacks := warrior.SunderArmorAuras.Get(target).GetStacks()
 			if saStacks != 0 {
 				sunderBonus = 242 * float64(core.MinInt32(saStacks+1, 5))
 			}
@@ -85,7 +60,7 @@ func (warrior *Warrior) registerDevastateSpell() {
 			spell.DealDamage(sim, result)
 
 			if result.Landed() {
-				if warrior.CanApplySunderAura() {
+				if warrior.CanApplySunderAura(target) {
 					warrior.SunderArmorDevastate.Cast(sim, target)
 				}
 			} else {
@@ -93,12 +68,4 @@ func (warrior *Warrior) registerDevastateSpell() {
 			}
 		},
 	})
-}
-
-func (warrior *Warrior) CanDevastate(sim *core.Simulation) bool {
-	if warrior.Devastate != nil {
-		return warrior.CurrentRage() >= warrior.Devastate.DefaultCast.Cost
-	} else {
-		return false
-	}
 }

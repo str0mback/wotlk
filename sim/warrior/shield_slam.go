@@ -38,18 +38,14 @@ func (warrior *Warrior) registerShieldSlamSpell() {
 			DefaultCast: core.Cast{
 				GCD: core.GCDDefault,
 			},
-			ModifyCast: func(sim *core.Simulation, spell *core.Spell, cast *core.Cast) {
-				if warrior.SwordAndBoardAura.IsActive() {
-					cast.Cost = 0
-
-					warrior.SwordAndBoardAura.Deactivate(sim)
-				}
-			},
 			IgnoreHaste: true,
 			CD: core.Cooldown{
 				Timer:    warrior.NewTimer(),
 				Duration: time.Second * 6,
 			},
+		},
+		ExtraCastCondition: func(sim *core.Simulation, target *core.Unit) bool {
+			return warrior.PseudoStats.CanBlock
 		},
 
 		BonusCritRating: 5 * core.CritRatingPerCritChance * float64(warrior.Talents.CriticalBlock),
@@ -86,18 +82,4 @@ func (warrior *Warrior) registerShieldSlamSpell() {
 			}
 		},
 	})
-}
-
-func (warrior *Warrior) HasEnoughRageForShieldSlam() bool {
-	if warrior.SwordAndBoardAura != nil {
-		if warrior.SwordAndBoardAura.IsActive() {
-			return true
-		}
-	}
-
-	return warrior.CurrentRage() >= warrior.ShieldSlam.DefaultCast.Cost
-}
-
-func (warrior *Warrior) CanShieldSlam(sim *core.Simulation) bool {
-	return warrior.PseudoStats.CanBlock && warrior.HasEnoughRageForShieldSlam() && warrior.ShieldSlam.IsReady(sim)
 }

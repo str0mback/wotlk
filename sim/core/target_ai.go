@@ -9,38 +9,40 @@ import (
 )
 
 type TargetAI interface {
-	Initialize(*Target)
-
+	Initialize(*Target, *proto.Target)
+	Reset(*Simulation)
 	DoAction(*Simulation)
 }
 
 func (target *Target) initialize(config *proto.Target) {
-	if config == nil || target.CurrentTarget == nil {
+	if config == nil {
 		return
 	}
 
-	if config.SwingSpeed > 0 {
-		aaOptions := AutoAttackOptions{
-			MainHand: Weapon{
-				BaseDamageMin:  config.MinBaseDamage,
-				SwingSpeed:     config.SwingSpeed,
-				SwingDuration:  time.Duration(float64(time.Second) * config.SwingSpeed),
-				CritMultiplier: 2,
-				SpellSchool:    SpellSchoolFromProto(config.SpellSchool),
-			},
-			AutoSwingMelee: true,
-		}
-		if config.DualWield {
-			aaOptions.OffHand = aaOptions.MainHand
-			if !config.DualWieldPenalty {
-				target.PseudoStats.DisableDWMissPenalty = true
+	if target.CurrentTarget != nil {
+		if config.SwingSpeed > 0 {
+			aaOptions := AutoAttackOptions{
+				MainHand: Weapon{
+					BaseDamageMin:  config.MinBaseDamage,
+					SwingSpeed:     config.SwingSpeed,
+					SwingDuration:  time.Duration(float64(time.Second) * config.SwingSpeed),
+					CritMultiplier: 2,
+					SpellSchool:    SpellSchoolFromProto(config.SpellSchool),
+				},
+				AutoSwingMelee: true,
 			}
+			if config.DualWield {
+				aaOptions.OffHand = aaOptions.MainHand
+				if !config.DualWieldPenalty {
+					target.PseudoStats.DisableDWMissPenalty = true
+				}
+			}
+			target.EnableAutoAttacks(target, aaOptions)
 		}
-		target.EnableAutoAttacks(target, aaOptions)
 	}
 
 	if target.AI != nil {
-		target.AI.Initialize(target)
+		target.AI.Initialize(target, config)
 
 		target.gcdAction = &PendingAction{
 			Priority: ActionPriorityGCD,
@@ -65,7 +67,6 @@ func (target *Target) AddPartyBuffs(partyBuffs *proto.PartyBuffs) {}
 func (target *Target) ApplyTalents()                              {}
 func (target *Target) GetCharacter() *Character                   { return nil }
 func (target *Target) Initialize()                                {}
-func (target *Target) Prepull(sim *Simulation)                    {}
 
 func (target *Target) DoNothing() {
 	target.doNothing = true

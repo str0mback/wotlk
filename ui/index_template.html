@@ -12,8 +12,6 @@
     
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.tablesorter/2.31.3/js/jquery.tablesorter.min.js" integrity="sha512-qzgd5cYSZcosqpzpn7zF2ZId8f/8CHmFKZ8j7mU4OUXTNRd5g+ZHBPsgKEwoqxCtdQvExE5LprwwPAgoicguNg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/bPopup/0.11.0/jquery.bpopup.min.js" integrity="sha512-kmrY+BFhi6ywgfK8hW1ySM/KYU3xPd4elbMhORq3DhacwqmitFrf3GB2HpLj3srV1zFsqxvAcZ4qU+y+ym1Eeg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="https://cdn.jsdelivr.net/npm/muuri@0.9.5/dist/muuri.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
     <script src="../index.ts" type="module"></script>
     <script src="./index.ts" type="module"></script>
@@ -33,45 +31,6 @@
   <!-- Load wowhead scripts after done loading everything else -->
   <script>const whTooltips = {colorLinks: true};</script>
   <script src="https://wow.zamimg.com/js/tooltips.js"></script>
-  <script>
-    var WowSim = {};
-    // Override wowheads xhrjsonrequest for our own usage of preprocessing
-    // This is basically a copy paste of WH.xhrJsonRequest, but with WhOnLoadHook hook
-    if (WH && WH.xhrJsonRequest) {   
-      WH.xhrJsonRequest = function(e, t) {
-      var a = new XMLHttpRequest;
-      a.onload = function(e) {
-          var a = e.target.response;
-          switch (e.target.responseType) {
-          case "json":
-              break;
-          case "":
-          case "text":
-              try {
-                  a = JSON.parse(a)
-              } catch (a) {
-                  WH.error("Could not parse expected JSON response", e.target);
-                  return t()
-              }
-              break;
-          default:
-              WH.error("Unexpected response type from JSON request", e.target);
-              return t()
-          }
-          if (WowSim.WhOnLoadHook)
-            a = WowSim.WhOnLoadHook(a)
-          return t(a)
-      };
-      a.onerror = function() {
-          return t()
-      };
-      a.open("GET", e, true);
-      a.responseType = "json";
-      a.send()
-    };
-  }
-
-  </script>
 	<!--<script>const aowow_tooltips = {colorlinks: true}</script>
 	<script type="text/javascript" src="https://wotlk.evowow.com/static/widgets/power.js"></script>-->
 </html>

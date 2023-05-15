@@ -1,7 +1,6 @@
 package paladin
 
 import (
-	"strconv"
 	"time"
 
 	"github.com/wowsims/wotlk/sim/core"
@@ -354,6 +353,13 @@ func (paladin *Paladin) applyWeaponSpecialization() {
 	}
 }
 
+func (paladin *Paladin) maybeProcVengeance(sim *core.Simulation, result *core.SpellResult) {
+	if result.DidCrit() && paladin.Talents.Vengeance > 0 {
+		paladin.VengeanceAura.Activate(sim)
+		paladin.VengeanceAura.AddStack(sim)
+	}
+}
+
 // I don't know if the new stack of vengeance applies to the crit that triggered it or not
 // Need to check this
 func (paladin *Paladin) applyVengeance() {
@@ -362,7 +368,7 @@ func (paladin *Paladin) applyVengeance() {
 	}
 
 	bonusPerStack := 0.01 * float64(paladin.Talents.Vengeance)
-	procAura := paladin.RegisterAura(core.Aura{
+	paladin.VengeanceAura = paladin.RegisterAura(core.Aura{
 		Label:     "Vengeance Proc",
 		ActionID:  core.ActionID{SpellID: 20057},
 		Duration:  time.Second * 30,
@@ -383,10 +389,7 @@ func (paladin *Paladin) applyVengeance() {
 			aura.Activate(sim)
 		},
 		OnSpellHitDealt: func(aura *core.Aura, sim *core.Simulation, spell *core.Spell, result *core.SpellResult) {
-			if result.Outcome.Matches(core.OutcomeCrit) {
-				procAura.Activate(sim)
-				procAura.AddStack(sim)
-			}
+			paladin.maybeProcVengeance(sim, result)
 		},
 	})
 }
@@ -406,7 +409,7 @@ func (paladin *Paladin) applyHeartOfTheCrusader() {
 			if !spell.Flags.Matches(SpellFlagSecondaryJudgement) {
 				return
 			}
-			debuffAura := core.HeartoftheCrusaderDebuff(result.Target, float64(paladin.Talents.HeartOfTheCrusader))
+			debuffAura := core.HeartOfTheCrusaderDebuff(result.Target, float64(paladin.Talents.HeartOfTheCrusader))
 			debuffAura.Activate(sim)
 		},
 	})
@@ -417,10 +420,22 @@ func (paladin *Paladin) applyArtOfWar() {
 		return
 	}
 
+	castTimeReduction := 0.5 * float64(paladin.Talents.TheArtOfWar)
 	paladin.ArtOfWarInstantCast = paladin.RegisterAura(core.Aura{
 		Label:    "Art Of War",
 		ActionID: core.ActionID{SpellID: 53488},
 		Duration: time.Second * 15,
+		OnGain: func(aura *core.Aura, sim *core.Simulation) {
+			paladin.Exorcism.CastTimeMultiplier -= castTimeReduction
+		},
+		OnExpire: func(aura *core.Aura, sim *core.Simulation) {
+			paladin.Exorcism.CastTimeMultiplier += castTimeReduction
+		},
+		OnCastComplete: func(aura *core.Aura, sim *core.Simulation, spell *core.Spell) {
+			if spell == paladin.Exorcism {
+				aura.Deactivate(sim)
+			}
+		},
 	})
 
 	paladin.RegisterAura(core.Aura{
@@ -455,7 +470,7 @@ func (paladin *Paladin) applyJudgmentsOfTheWise() {
 	procSpell := paladin.RegisterSpell(core.SpellConfig{
 		ActionID: core.ActionID{SpellID: 31878},
 		ApplyEffects: func(sim *core.Simulation, unit *core.Unit, _ *core.Spell) {
-			paladin.AddMana(sim, paladin.BaseMana*0.25, paladin.JowiseManaMetrics, false)
+			paladin.AddMana(sim, paladin.BaseMana*0.25, paladin.JowiseManaMetrics)
 			paladin.Env.Raid.ProcReplenishment(sim, replSrc)
 		},
 	})
@@ -488,20 +503,7 @@ func (paladin *Paladin) applyRighteousVengeance() {
 
 	dotActionID := core.ActionID{SpellID: 61840} // Righteous Vengeance
 
-	rvDots := make([]*core.Dot, paladin.Env.GetNumTargets())
-	rvProc := paladin.RegisterSpell(core.SpellConfig{
-		ActionID:    dotActionID.WithTag(1),
-		SpellSchool: core.SpellSchoolHoly,
-		ProcMask:    core.ProcMaskEmpty,
-		Flags:       core.SpellFlagNoOnCastComplete | core.SpellFlagIgnoreModifiers,
-
-		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
-			rvDots[target.Index].ApplyOrReset(sim)
-			spell.CalcAndDealOutcome(sim, target, spell.OutcomeAlwaysHit)
-		},
-	})
-
-	rvSpell := paladin.RegisterSpell(core.SpellConfig{
+	rvDot := paladin.RegisterSpell(core.SpellConfig{
 		ActionID:    dotActionID.WithTag(2),
 		SpellSchool: core.SpellSchoolHoly,
 		ProcMask:    core.ProcMaskEmpty,
@@ -510,20 +512,13 @@ func (paladin *Paladin) applyRighteousVengeance() {
 		DamageMultiplier: 1,
 		CritMultiplier:   paladin.MeleeCritMultiplier(),
 		ThreatMultiplier: 1,
-	})
 
-	for i := range rvDots {
-		target := paladin.Env.GetTargetUnit(int32(i))
-		rvDots[i] = core.NewDot(core.Dot{
-			Spell: rvSpell,
-			Aura: target.RegisterAura(core.Aura{
-				Label:    "Righteous Vengeance (DoT) - " + strconv.Itoa(int(paladin.Index)),
-				ActionID: rvSpell.ActionID,
-			}),
+		Dot: core.DotConfig{
+			Aura: core.Aura{
+				Label: "Righteous Vengeance",
+			},
 			NumberOfTicks: 4,
 			TickLength:    time.Second * 2,
-
-			SnapshotAttackerMultiplier: 1,
 
 			OnTick: func(sim *core.Simulation, target *core.Unit, dot *core.Dot) {
 				if paladin.HasTuralyonsOrLiadrinsBattlegear2Pc {
@@ -532,9 +527,20 @@ func (paladin *Paladin) applyRighteousVengeance() {
 					dot.CalcAndDealPeriodicSnapshotDamage(sim, target, dot.Spell.OutcomeAlwaysHit)
 				}
 			},
-		})
+		},
+	})
 
-	}
+	rvSpell := paladin.RegisterSpell(core.SpellConfig{
+		ActionID:    dotActionID.WithTag(1),
+		SpellSchool: core.SpellSchoolHoly,
+		ProcMask:    core.ProcMaskEmpty,
+		Flags:       core.SpellFlagNoOnCastComplete | core.SpellFlagIgnoreModifiers,
+
+		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
+			rvDot.Dot(target).ApplyOrReset(sim)
+			spell.CalcAndDealOutcome(sim, target, spell.OutcomeAlwaysHit)
+		},
+	})
 
 	paladin.RegisterAura(core.Aura{
 		Label:    "Righteous Vengeance",
@@ -550,17 +556,14 @@ func (paladin *Paladin) applyRighteousVengeance() {
 				return
 			}
 
-			dot := rvDots[result.Target.Index]
-
-			var outstandingDamage float64
-			if dot.IsActive() {
-				outstandingDamage = dot.SnapshotBaseDamage * float64(dot.NumberOfTicks-dot.TickCount)
-			}
+			dot := rvDot.Dot(result.Target)
 
 			newDamage := result.Damage * (0.10 * float64(paladin.Talents.RighteousVengeance))
+			outstandingDamage := core.TernaryFloat64(dot.IsActive(), dot.SnapshotBaseDamage*float64(dot.NumberOfTicks-dot.TickCount), 0)
 
+			dot.SnapshotAttackerMultiplier = 1
 			dot.SnapshotBaseDamage = (outstandingDamage + newDamage) / float64(dot.NumberOfTicks)
-			rvProc.Cast(sim, result.Target)
+			rvSpell.Cast(sim, result.Target)
 		},
 	})
 }

@@ -33,6 +33,9 @@ func (druid *Druid) registerSwipeBearSpell() {
 			},
 			IgnoreHaste: true,
 		},
+		ExtraCastCondition: func(sim *core.Simulation, target *core.Unit) bool {
+			return druid.InForm(Bear)
+		},
 
 		DamageMultiplier: lbdm * thdm * fidm,
 		CritMultiplier:   druid.MeleeCritMultiplier(Bear),
@@ -41,8 +44,8 @@ func (druid *Druid) registerSwipeBearSpell() {
 		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
 			baseDamage := flatBaseDamage + 0.063*spell.MeleeAttackPower()
 			baseDamage *= sim.Encounter.AOECapMultiplier()
-			for _, aoeTarget := range sim.Encounter.Targets {
-				spell.CalcAndDealDamage(sim, &aoeTarget.Unit, baseDamage, spell.OutcomeMeleeSpecialHitAndCrit)
+			for _, aoeTarget := range sim.Encounter.TargetUnits {
+				spell.CalcAndDealDamage(sim, aoeTarget, baseDamage, spell.OutcomeMeleeSpecialHitAndCrit)
 			}
 		},
 	})
@@ -67,31 +70,26 @@ func (druid *Druid) registerSwipeCatSpell() {
 			},
 			IgnoreHaste: true,
 		},
+		ExtraCastCondition: func(sim *core.Simulation, target *core.Unit) bool {
+			return druid.InForm(Cat)
+		},
 
 		DamageMultiplier: fidm * weaponMulti,
 		CritMultiplier:   druid.MeleeCritMultiplier(Cat),
 		ThreatMultiplier: 1,
 
 		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
-			for _, aoeTarget := range sim.Encounter.Targets {
-				baseDamage := spell.Unit.MHNormalizedWeaponDamage(sim, spell.MeleeAttackPower())
-				baseDamage *= sim.Encounter.AOECapMultiplier()
-				spell.CalcAndDealDamage(sim, &aoeTarget.Unit, baseDamage, spell.OutcomeMeleeSpecialHitAndCrit)
+			baseDamage := spell.Unit.MHNormalizedWeaponDamage(sim, spell.MeleeAttackPower())
+			baseDamage *= sim.Encounter.AOECapMultiplier()
+			for _, aoeTarget := range sim.Encounter.TargetUnits {
+				spell.CalcAndDealDamage(sim, aoeTarget, baseDamage, spell.OutcomeMeleeSpecialHitAndCrit)
 			}
 		},
 	})
 }
 
-func (druid *Druid) CanSwipeCat() bool {
-	return druid.InForm(Cat) && druid.CurrentEnergy() >= druid.CurrentSwipeCatCost()
-}
-
 func (druid *Druid) CurrentSwipeCatCost() float64 {
-	return druid.SwipeCat.ApplyCostModifiers(druid.SwipeCat.BaseCost)
-}
-
-func (druid *Druid) CanSwipeBear() bool {
-	return druid.InForm(Bear) && druid.CurrentRage() >= druid.SwipeBear.DefaultCast.Cost
+	return druid.SwipeCat.ApplyCostModifiers(druid.SwipeCat.DefaultCast.Cost)
 }
 
 func (druid *Druid) IsSwipeSpell(spell *core.Spell) bool {

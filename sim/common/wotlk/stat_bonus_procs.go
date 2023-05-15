@@ -42,6 +42,7 @@ func newProcStatBonusEffect(config ProcStatBonusEffect) {
 		}
 
 		core.MakeProcTriggerAura(&character.Unit, core.ProcTrigger{
+			ActionID:   core.ActionID{ItemID: config.ID},
 			Name:       config.Name,
 			Callback:   config.Callback,
 			ProcMask:   config.ProcMask,
@@ -56,9 +57,6 @@ func newProcStatBonusEffect(config ProcStatBonusEffect) {
 }
 
 func init() {
-	// TODO: <https://www.wowhead.com/wotlk/item=45507/the-generals-heart>
-	//  Equip: When struck in combat has a chance of shielding you in a protective barrier which will reduce damage from each attack by 205.  Lasts 10 secs. (Proc chance: 5%, 50s cooldown)
-
 	// Keep these separated by stat, ordered by item ID within each group.
 	newProcStatBonusEffect(ProcStatBonusEffect{
 		Name:       "Meteorite Whetstone",
@@ -308,7 +306,7 @@ func init() {
 	newProcStatBonusEffect(ProcStatBonusEffect{
 		Name:       "Blood of the Old God",
 		ID:         45522,
-		Bonus:      stats.Stats{stats.AttackPower: 1284, stats.RangedAttackPower: 1284},
+		Bonus:      stats.Stats{stats.AttackPower: 1358, stats.RangedAttackPower: 1358},
 		Duration:   time.Second * 10,
 		Callback:   core.CallbackOnSpellHitDealt,
 		ProcMask:   core.ProcMaskMeleeOrRanged,
@@ -321,7 +319,7 @@ func init() {
 		ID:         45518,
 		Bonus:      stats.Stats{stats.SpellPower: 959},
 		Duration:   time.Second * 10,
-		Callback:   core.CallbackOnSpellHitDealt,
+		Callback:   core.CallbackOnCastComplete,
 		ProcMask:   core.ProcMaskSpellDamage,
 		ProcChance: 0.1,
 		ICD:        time.Second * 45,
@@ -338,11 +336,11 @@ func init() {
 	newProcStatBonusEffect(ProcStatBonusEffect{
 		Name:       "Comet's Trail",
 		ID:         45609,
-		Bonus:      stats.Stats{stats.SpellHaste: 768, stats.MeleeHaste: 768},
+		Bonus:      stats.Stats{stats.SpellHaste: 819, stats.MeleeHaste: 819},
 		Duration:   time.Second * 10,
 		Callback:   core.CallbackOnSpellHitDealt,
 		ProcMask:   core.ProcMaskMeleeOrRanged,
-		Outcome:    core.OutcomeCrit,
+		Outcome:    core.OutcomeLanded,
 		ProcChance: 0.15,
 		ICD:        time.Second * 45,
 	})
@@ -381,7 +379,7 @@ func init() {
 	newProcStatBonusEffect(ProcStatBonusEffect{
 		Name:       "Dark Matter",
 		ID:         46038,
-		Bonus:      stats.Stats{stats.MeleeCrit: 612, stats.SpellCrit: 612},
+		Bonus:      stats.Stats{stats.MeleeCrit: 692, stats.SpellCrit: 692},
 		Duration:   time.Second * 10,
 		Callback:   core.CallbackOnSpellHitDealt,
 		ProcMask:   core.ProcMaskMeleeOrRanged,

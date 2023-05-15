@@ -129,9 +129,9 @@ func ApplyProcTriggerCallback(unit *Unit, aura *Aura, config ProcTrigger) {
 
 func MakeProcTriggerAura(unit *Unit, config ProcTrigger) *Aura {
 	aura := Aura{
-		Label:    config.Name,
-		ActionID: config.ActionID,
-		Duration: config.Duration,
+		Label:           config.Name,
+		ActionIDForProc: config.ActionID,
+		Duration:        config.Duration,
 	}
 	if config.Duration == 0 {
 		aura.Duration = NeverExpires
@@ -143,6 +143,19 @@ func MakeProcTriggerAura(unit *Unit, config ProcTrigger) *Aura {
 	ApplyProcTriggerCallback(unit, &aura, config)
 
 	return unit.GetOrRegisterAura(aura)
+}
+
+type StackingStatAura struct {
+	Aura          Aura
+	BonusPerStack stats.Stats
+}
+
+func MakeStackingAura(character *Character, config StackingStatAura) *Aura {
+	bonusPerStack := config.BonusPerStack
+	config.Aura.OnStacksChange = func(aura *Aura, sim *Simulation, oldStacks int32, newStacks int32) {
+		character.AddStatsDynamic(sim, bonusPerStack.Multiply(float64(newStacks-oldStacks)))
+	}
+	return character.RegisterAura(config.Aura)
 }
 
 // Returns the same Aura for chaining.
@@ -194,7 +207,7 @@ func (character *Character) NewTemporaryStatsAuraWrapped(auraLabel string, actio
 	return character.GetOrRegisterAura(config)
 }
 
-func ApplyFixedUptimeAura(aura *Aura, uptime float64, tickLength time.Duration) {
+func ApplyFixedUptimeAura(aura *Aura, uptime float64, tickLength time.Duration, startTime time.Duration) {
 	auraDuration := aura.Duration
 	ticksPerAura := float64(auraDuration) / float64(tickLength)
 	chancePerTick := TernaryFloat64(uptime == 1, 1, 1.0-math.Pow(1-uptime, 1/ticksPerAura))
@@ -211,7 +224,7 @@ func ApplyFixedUptimeAura(aura *Aura, uptime float64, tickLength time.Duration) 
 
 		// Also try once at the start.
 		StartPeriodicAction(sim, PeriodicActionOptions{
-			Period:   1,
+			Period:   startTime,
 			NumTicks: 1,
 			OnAction: func(sim *Simulation) {
 				if sim.RandomFloat("FixedAura") < uptime {

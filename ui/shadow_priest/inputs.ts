@@ -3,7 +3,8 @@ import { Player } from '../core/player.js';
 import { Spec } from '../core/proto/common.js';
 import {
 	ShadowPriest_Options_Armor as Armor,
-	ShadowPriest_Rotation_RotationType as RotationType
+	ShadowPriest_Rotation_RotationType as RotationType,
+	ShadowPriest_Rotation_PreCastOption as precastType
 } from '../core/proto/priest.js';
 import { EventID } from '../core/typed_event.js';
 import { ActionId } from '../core/proto_utils/action_id.js';
@@ -43,16 +44,21 @@ export const ShadowPriestRotationConfig = {
 			label: 'Rotation Type',
 			labelTooltip: 'Choose how to clip your mindflay. Basic will never clip. Clipping will clip for other spells and use a 2xMF2 when there is time for 4 ticks. Ideal will evaluate the DPS gain of every action to determine MF actions.',
 			values: [
-				{ name: 'Basic', value: RotationType.Basic },
-				{ name: 'Clipping', value: RotationType.Clipping },
+				//{ name: 'Basic', value: RotationType.Basic },
+				//{ name: 'Clipping', value: RotationType.Clipping },
 				{ name: 'Ideal', value: RotationType.Ideal },
 				{ name: 'AoE', value: RotationType.AoE },
 			],
 		}),
-		InputHelpers.makeRotationBooleanInput<Spec.SpecShadowPriest>({
-			fieldName: 'precastVt',
-			label: 'Precast Vampiric Touch',
-			labelTooltip: 'Start fight with VT landing at time 0',
+		InputHelpers.makeRotationEnumInput<Spec.SpecShadowPriest, precastType>({
+			fieldName: 'precastType',
+			label: 'PreCast Spell',
+			labelTooltip: 'Choose which spell you want to Precast',
+			values: [
+				{ name: "None", value: precastType.Nothing },
+				{ name: 'Vampiric Touch', value: precastType.PrecastVt },
+				{ name: 'Mind Blast', value: precastType.PrecastMb },
+			],
 		}),
 		InputHelpers.makeRotationNumberInput<Spec.SpecShadowPriest>({
 			fieldName: 'latency',

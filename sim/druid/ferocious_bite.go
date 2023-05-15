@@ -26,6 +26,9 @@ func (druid *Druid) registerFerociousBiteSpell() {
 			},
 			IgnoreHaste: true,
 		},
+		ExtraCastCondition: func(sim *core.Simulation, target *core.Unit) bool {
+			return druid.InForm(Cat) && druid.ComboPoints() > 0
+		},
 
 		BonusCritRating: 0 +
 			core.TernaryFloat64(druid.HasSetBonus(ItemSetMalfurionsBattlegear, 4), 5*core.CritRatingPerCritChance, 0.0) +
@@ -58,10 +61,6 @@ func (druid *Druid) registerFerociousBiteSpell() {
 	})
 }
 
-func (druid *Druid) CanFerociousBite() bool {
-	return druid.InForm(Cat) && druid.ComboPoints() > 0 && druid.CurrentEnergy() >= druid.CurrentFerociousBiteCost()
-}
-
 func (druid *Druid) CurrentFerociousBiteCost() float64 {
-	return druid.FerociousBite.ApplyCostModifiers(druid.FerociousBite.BaseCost)
+	return druid.FerociousBite.ApplyCostModifiers(druid.FerociousBite.DefaultCast.Cost)
 }

@@ -1,10 +1,19 @@
-import { ArmorType } from '../proto/common.js';
-import { Class } from '../proto/common.js';
-import { ItemSlot } from '../proto/common.js';
-import { Profession } from '../proto/common.js';
-import { Race } from '../proto/common.js';
-import { Stat, PseudoStat } from '../proto/common.js';
-import { WeaponType } from '../proto/common.js';
+import {
+	ArmorType,
+	Class,
+	ItemSlot,
+	Profession,
+	PseudoStat,
+	Race,
+	RangedWeaponType,
+	Stat,
+	WeaponType,
+} from '../proto/common.js';
+import {
+	DungeonDifficulty,
+	RaidFilterOption,
+	SourceFilterOption,
+} from '../proto/ui.js';
 import { ResourceType } from '../proto/api.js';
 
 export const armorTypeNames: Record<ArmorType, string> = {
@@ -26,6 +35,19 @@ export const weaponTypeNames: Record<WeaponType, string> = {
 	[WeaponType.WeaponTypeShield]: 'Shield',
 	[WeaponType.WeaponTypeStaff]: 'Staff',
 	[WeaponType.WeaponTypeSword]: 'Sword',
+};
+
+export const rangedWeaponTypeNames: Record<RangedWeaponType, string> = {
+	[RangedWeaponType.RangedWeaponTypeUnknown]: 'Unknown',
+	[RangedWeaponType.RangedWeaponTypeBow]: 'Bow',
+	[RangedWeaponType.RangedWeaponTypeCrossbow]: 'Crossbow',
+	[RangedWeaponType.RangedWeaponTypeGun]: 'Gun',
+	[RangedWeaponType.RangedWeaponTypeIdol]: 'Idol',
+	[RangedWeaponType.RangedWeaponTypeLibram]: 'Libram',
+	[RangedWeaponType.RangedWeaponTypeSigil]: 'Sigil',
+	[RangedWeaponType.RangedWeaponTypeThrown]: 'Thrown',
+	[RangedWeaponType.RangedWeaponTypeTotem]: 'Totem',
+	[RangedWeaponType.RangedWeaponTypeWand]: 'Wand',
 };
 
 export const raceNames: Record<Race, string> = {
@@ -142,6 +164,11 @@ export const statOrder: Array<Stat> = [
 	Stat.StatFrostResistance,
 	Stat.StatNatureResistance,
 	Stat.StatShadowResistance,
+	Stat.StatRunicPower,
+	Stat.StatBloodRune,
+	Stat.StatFrostRune,
+	Stat.StatUnholyRune,
+	Stat.StatDeathRune,
 ];
 
 export const statNames: Record<Stat, string> = {
@@ -180,6 +207,11 @@ export const statNames: Record<Stat, string> = {
 	[Stat.StatNatureResistance]: 'Nature Resistance',
 	[Stat.StatShadowResistance]: 'Shadow Resistance',
 	[Stat.StatBonusArmor]: 'Bonus Armor',
+	[Stat.StatRunicPower]: 'Runic Power',
+	[Stat.StatBloodRune]: 'Blood Rune',
+	[Stat.StatFrostRune]: 'Frost Rune',
+	[Stat.StatUnholyRune]: 'Unholy Rune',
+	[Stat.StatDeathRune]: 'Death Rune',
 };
 
 export const pseudoStatOrder: Array<PseudoStat> = [
@@ -264,3 +296,39 @@ export function stringToResourceType(str: string): ResourceType {
 	}
 	return ResourceType.ResourceTypeNone;
 }
+
+export const sourceNames: Record<SourceFilterOption, string> = {
+	[SourceFilterOption.SourceUnknown]: 'Unknown',
+	[SourceFilterOption.SourceCrafting]: 'Crafting',
+	[SourceFilterOption.SourceQuest]: 'Quest',
+	[SourceFilterOption.SourceDungeon]: 'Dungeon',
+	[SourceFilterOption.SourceDungeonH]: 'Dungeon (H)',
+	[SourceFilterOption.SourceRaid10]: 'Raid (10N)',
+	[SourceFilterOption.SourceRaid10H]: 'Raid (10H)',
+	[SourceFilterOption.SourceRaid25]: 'Raid (25N)',
+	[SourceFilterOption.SourceRaid25H]: 'Raid (25H)',
+};
+export const raidNames: Record<RaidFilterOption, string> = {
+	[RaidFilterOption.RaidUnknown]: 'Unknown',
+	[RaidFilterOption.RaidVanilla]: 'Vanilla',
+	[RaidFilterOption.RaidTbc]: 'TBC',
+	[RaidFilterOption.RaidNaxxramas]: 'Naxxramas',
+	[RaidFilterOption.RaidEyeOfEternity]: 'Eye of Eternity',
+	[RaidFilterOption.RaidObsidianSanctum]: 'Obsidian Sanctum',
+	[RaidFilterOption.RaidVaultOfArchavon]: 'Vault of Archavon',
+	[RaidFilterOption.RaidUlduar]: 'Ulduar',
+	[RaidFilterOption.RaidTrialOfTheCrusader]: 'Trial of the Crusader',
+	[RaidFilterOption.RaidOnyxiasLair]: 'Onyxia\'s Lair',
+	[RaidFilterOption.RaidIcecrownCitadel]: 'Icecrown Citadel',
+	[RaidFilterOption.RaidRubySanctum]: 'Ruby Sanctum',
+};
+
+export const difficultyNames: Record<DungeonDifficulty, string> = {
+	[DungeonDifficulty.DifficultyUnknown]: 'Unknown',
+	[DungeonDifficulty.DifficultyNormal]: 'N',
+	[DungeonDifficulty.DifficultyHeroic]: 'H',
+	[DungeonDifficulty.DifficultyRaid10]: '10N',
+	[DungeonDifficulty.DifficultyRaid10H]: '10H',
+	[DungeonDifficulty.DifficultyRaid25]: '25N',
+	[DungeonDifficulty.DifficultyRaid25H]: '25H',
+};

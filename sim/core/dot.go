@@ -1,16 +1,36 @@
 package core
 
 import (
+	"strconv"
 	"time"
 )
 
 type OnSnapshot func(sim *Simulation, target *Unit, dot *Dot, isRollover bool)
 type OnTick func(sim *Simulation, target *Unit, dot *Dot)
 
+type DotConfig struct {
+	IsAOE    bool // Set to true for AOE dots (Blizzard, Hurricane, Consecrate, etc)
+	SelfOnly bool // Set to true to only create the self-hot.
+
+	// Optional, will default to the corresponding spell.
+	Spell *Spell
+
+	Aura Aura
+
+	NumberOfTicks int32         // number of ticks over the whole duration
+	TickLength    time.Duration // time between each tick
+
+	// If true, tick length will be shortened based on casting speed.
+	AffectedByCastSpeed bool
+
+	OnSnapshot OnSnapshot
+	OnTick     OnTick
+}
+
 type Dot struct {
 	Spell *Spell
 
-	// Embed Aura so we can use IsActive/Refresh/etc directly.
+	// Embed Aura, so we can use IsActive/Refresh/etc directly.
 	*Aura
 
 	NumberOfTicks int32         // number of ticks over the whole duration
@@ -35,7 +55,7 @@ type Dot struct {
 	lastTickTime time.Duration
 }
 
-// TickPeriod is how fast the snapshotted dot ticks.
+// TickPeriod is how fast the snapshot dot ticks.
 func (dot *Dot) TickPeriod() time.Duration {
 	return dot.tickPeriod
 }
@@ -52,7 +72,7 @@ func (dot *Dot) NumTicksRemaining(sim *Simulation) int {
 
 // Roll over = gets carried over with everlasting refresh and doesn't get applied if triggered when the spell is already up.
 // - Example: critical strike rating, internal % damage modifiers: buffs or debuffs on player
-// Nevermelting Ice, Shadow Mastery (ISB), Trick of the Trades, Deaths Embrace, Thadius Polarity, Hera Spores, Crit on weapons from swapping
+// Nevermelting Ice, Shadow Mastery (ISB), Trick of the Trades, Deaths Embrace, Thaddius Polarity, Hera Spores, Crit on weapons from swapping
 
 // Snapshot = calculation happens at refresh and application (stays up even if buff falls of, until new refresh or application)
 // - Example: Spell power, Haste rating
@@ -63,8 +83,8 @@ func (dot *Dot) NumTicksRemaining(sim *Simulation) int {
 // Haunt, Curse of Shadow, Shadow Embrace
 
 // Rollover is used to reset the duration of a dot from an external spell (not casting the dot itself)
-// This keeps the snapshotted crit and %dmg modifiers.
-// However sp and haste are recalculated.
+// This keeps the snapshot crit and %dmg modifiers.
+// However, sp and haste are recalculated.
 func (dot *Dot) Rollover(sim *Simulation) {
 	dot.TakeSnapshot(sim, true)
 
@@ -83,6 +103,8 @@ func (dot *Dot) Rollover(sim *Simulation) {
 }
 
 func (dot *Dot) Apply(sim *Simulation) {
+	dot.TakeSnapshot(sim, false)
+
 	dot.Cancel(sim)
 	dot.TickCount = 0
 	dot.RecomputeAuraDuration()
@@ -118,6 +140,8 @@ func (dot *Dot) ApplyOrReset(sim *Simulation) {
 
 // Like Apply(), but does not reset the tick timer.
 func (dot *Dot) ApplyOrRefresh(sim *Simulation) {
+	dot.TakeSnapshot(sim, false)
+
 	dot.TickCount = 0
 	dot.RecomputeAuraDuration()
 	dot.Aura.Activate(sim)
@@ -159,6 +183,19 @@ func (dot *Dot) TickOnce(sim *Simulation) {
 	dot.OnTick(sim, dot.Unit, dot)
 }
 
+// ManualTick forces the dot forward one tick
+// Will cancel the dot if it is out of ticks.
+func (dot *Dot) ManualTick(sim *Simulation) {
+	if dot.lastTickTime != sim.CurrentTime {
+		dot.TickCount++
+		if dot.NumTicksRemaining(sim) <= 0 {
+			dot.Cancel(sim)
+		} else {
+			dot.TickOnce(sim)
+		}
+	}
+}
+
 func (dot *Dot) basePeriodicOptions() PeriodicActionOptions {
 	return PeriodicActionOptions{
 		//Priority: ActionPriorityDOT,
@@ -190,8 +227,6 @@ func NewDot(config Dot) *Dot {
 
 	dot.Aura.ApplyOnGain(func(aura *Aura, sim *Simulation) {
 		dot.lastTickTime = sim.CurrentTime
-		dot.TakeSnapshot(sim, false)
-
 		periodicOptions := dot.basePeriodicOptions()
 		periodicOptions.Period = dot.tickPeriod
 		dot.tickAction = NewPeriodicAction(sim, periodicOptions)
@@ -207,14 +242,50 @@ func NewDot(config Dot) *Dot {
 	return dot
 }
 
-// Creates HoTs for all allied units.
-func NewAllyHotArray(caster *Unit, config Dot, auraConfig Aura) []*Dot {
-	hots := make([]*Dot, len(caster.Env.AllUnits))
-	for _, target := range caster.Env.AllUnits {
-		if !caster.IsOpponent(target) {
-			config.Aura = target.GetOrRegisterAura(auraConfig)
-			hots[target.UnitIndex] = NewDot(config)
+type DotArray []*Dot
+
+func (dots DotArray) Get(target *Unit) *Dot {
+	return dots[target.UnitIndex]
+}
+
+func (spell *Spell) createDots(config DotConfig, isHot bool) {
+	if config.NumberOfTicks == 0 && config.TickLength == 0 {
+		return
+	}
+
+	if config.Spell == nil {
+		config.Spell = spell
+	}
+	dot := Dot{
+		Spell: config.Spell,
+
+		NumberOfTicks:       config.NumberOfTicks,
+		TickLength:          config.TickLength,
+		AffectedByCastSpeed: config.AffectedByCastSpeed,
+
+		OnSnapshot: config.OnSnapshot,
+		OnTick:     config.OnTick,
+	}
+
+	auraConfig := config.Aura
+	if auraConfig.ActionID.IsEmptyAction() {
+		auraConfig.ActionID = dot.Spell.ActionID
+	}
+
+	caster := dot.Spell.Unit
+	if config.IsAOE || config.SelfOnly {
+		dot.Aura = caster.GetOrRegisterAura(auraConfig)
+		spell.aoeDot = NewDot(dot)
+	} else {
+		auraConfig.Label += "-" + strconv.Itoa(int(caster.UnitIndex))
+		if spell.dots == nil {
+			spell.dots = make([]*Dot, len(caster.Env.AllUnits))
+		}
+		for _, target := range caster.Env.AllUnits {
+			if isHot != caster.IsOpponent(target) {
+				dot.Aura = target.GetOrRegisterAura(auraConfig)
+				spell.dots[target.UnitIndex] = NewDot(dot)
+			}
 		}
 	}
-	return hots
 }

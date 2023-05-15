@@ -1,7 +1,6 @@
 package mage
 
 import (
-	"strconv"
 	"time"
 
 	"github.com/wowsims/wotlk/sim/core"
@@ -30,11 +29,20 @@ func (mage *Mage) registerLivingBombSpell() {
 		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
 			baseDamage := 690 + 0.4*spell.SpellPower()
 			baseDamage *= sim.Encounter.AOECapMultiplier()
-			for _, aoeTarget := range sim.Encounter.Targets {
-				spell.CalcAndDealDamage(sim, &aoeTarget.Unit, baseDamage, spell.OutcomeMagicHitAndCrit)
+			for _, aoeTarget := range sim.Encounter.TargetUnits {
+				spell.CalcAndDealDamage(sim, aoeTarget, baseDamage, spell.OutcomeMagicHitAndCrit)
 			}
 		},
 	})
+
+	onTick := func(sim *core.Simulation, target *core.Unit, dot *core.Dot) {
+		dot.CalcAndDealPeriodicSnapshotDamage(sim, target, dot.OutcomeTick)
+	}
+	if mage.HasMajorGlyph(proto.MageMajorGlyph_GlyphOfLivingBomb) {
+		onTick = func(sim *core.Simulation, target *core.Unit, dot *core.Dot) {
+			dot.CalcAndDealPeriodicSnapshotDamage(sim, target, dot.OutcomeSnapshotCrit)
+		}
+	}
 
 	mage.LivingBomb = mage.RegisterSpell(core.SpellConfig{
 		ActionID:    core.ActionID{SpellID: 55360},
@@ -59,45 +67,31 @@ func (mage *Mage) registerLivingBombSpell() {
 		CritMultiplier:   mage.SpellCritMultiplier(1, mage.bonusCritDamage),
 		ThreatMultiplier: 1 - 0.1*float64(mage.Talents.BurningSoul),
 
+		Dot: core.DotConfig{
+			Aura: core.Aura{
+				Label: "LivingBomb",
+				OnExpire: func(aura *core.Aura, sim *core.Simulation) {
+					livingBombExplosionSpell.Cast(sim, aura.Unit)
+				},
+			},
+
+			NumberOfTicks: 4,
+			TickLength:    time.Second * 3,
+
+			OnSnapshot: func(sim *core.Simulation, target *core.Unit, dot *core.Dot, _ bool) {
+				dot.SnapshotBaseDamage = 345 + 0.2*dot.Spell.SpellPower()
+				dot.SnapshotCritChance = dot.Spell.SpellCritChance(target)
+				dot.SnapshotAttackerMultiplier = dot.Spell.AttackerDamageMultiplier(dot.Spell.Unit.AttackTables[target.UnitIndex])
+			},
+			OnTick: onTick,
+		},
+
 		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
 			result := spell.CalcOutcome(sim, target, spell.OutcomeMagicHit)
 			if result.Landed() {
-				mage.LivingBombDot.Apply(sim)
+				spell.Dot(target).Apply(sim)
 			}
 			spell.DealOutcome(sim, result)
 		},
-	})
-
-	target := mage.CurrentTarget
-
-	onTick := func(sim *core.Simulation, target *core.Unit, dot *core.Dot) {
-		dot.CalcAndDealPeriodicSnapshotDamage(sim, target, dot.OutcomeTick)
-	}
-	if mage.HasMajorGlyph(proto.MageMajorGlyph_GlyphOfLivingBomb) {
-		onTick = func(sim *core.Simulation, target *core.Unit, dot *core.Dot) {
-			dot.CalcAndDealPeriodicSnapshotDamage(sim, target, dot.OutcomeSnapshotCrit)
-		}
-	}
-
-	mage.LivingBombDot = core.NewDot(core.Dot{
-		Spell: mage.LivingBomb,
-		Aura: target.RegisterAura(core.Aura{
-			Label:    "LivingBomb-" + strconv.Itoa(int(mage.Index)),
-			ActionID: mage.LivingBomb.ActionID,
-			Tag:      "LivingBomb",
-			OnExpire: func(aura *core.Aura, sim *core.Simulation) {
-				livingBombExplosionSpell.Cast(sim, target)
-			},
-		}),
-
-		NumberOfTicks: 4,
-		TickLength:    time.Second * 3,
-
-		OnSnapshot: func(sim *core.Simulation, target *core.Unit, dot *core.Dot, _ bool) {
-			dot.SnapshotBaseDamage = 345 + 0.2*dot.Spell.SpellPower()
-			dot.SnapshotCritChance = dot.Spell.SpellCritChance(target)
-			dot.SnapshotAttackerMultiplier = dot.Spell.AttackerDamageMultiplier(dot.Spell.Unit.AttackTables[target.UnitIndex])
-		},
-		OnTick: onTick,
 	})
 }

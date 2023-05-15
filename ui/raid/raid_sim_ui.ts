@@ -1,4 +1,4 @@
-import { DetailedResults } from "../core/components/detailed_results.js";
+import { EmbeddedDetailedResults } from "../core/components/detailed_results.js";
 import { LogRunner } from "../core/components/log_runner.js";
 import { addRaidSimAction, RaidSimResultsManager, ReferenceData } from "../core/components/raid_sim_action.js";
 
@@ -44,19 +44,16 @@ export class RaidSimUI extends SimUI {
 
 	readonly referenceChangeEmitter = new TypedEvent<void>();
 
-	private settingsMuuri: any;
-
 	constructor(parentElem: HTMLElement, config: RaidSimConfig) {
 		super(parentElem, new Sim(), {
+			cssClass: 'raid-sim-ui',
 			cssScheme: 'raid',
 			spec: null,
 			launchStatus: raidSimStatus,
 			knownIssues: (config.knownIssues || []).concat(extraKnownIssues),
 		});
-		this.rootElem.classList.add('raid-sim-ui');
 
 		this.config = config;
-		this.settingsMuuri = null;
 
 		this.sim.raid.compChangeEmitter.on(eventID => this.compChangeEmitter.emit(eventID));
 		[
@@ -110,10 +107,10 @@ export class RaidSimUI extends SimUI {
 	}
 
 	private addTopbarComponents() {
-		this.simHeader.addImportLink('JSON', parent => new ImportExport.RaidJsonImporter(parent, this));
-		this.simHeader.addImportLink('WCL', parent => new ImportExport.RaidWCLImporter(parent, this));
+		this.simHeader.addImportLink('JSON', (parent) => new ImportExport.RaidJsonImporter(this.rootElem, this));
+		this.simHeader.addImportLink('WCL', (parent) => new ImportExport.RaidWCLImporter(this.rootElem, this));
 
-		this.simHeader.addExportLink('JSON', parent => new ImportExport.RaidJsonExporter(parent, this));
+		this.simHeader.addExportLink('JSON', (parent) => new ImportExport.RaidJsonExporter(this.rootElem, this));
 	}
 
 	private addRaidTab() {
@@ -130,7 +127,7 @@ export class RaidSimUI extends SimUI {
 			</div>
 		`);
 
-		const detailedResults = new DetailedResults(this.rootElem.getElementsByClassName('detailed-results')[0] as HTMLElement, this, this.raidSimResultsManager!);
+		const detailedResults = new EmbeddedDetailedResults(this.rootElem.getElementsByClassName('detailed-results')[0] as HTMLElement, this, this.raidSimResultsManager!);
 	}
 
 	private addLogTab() {
@@ -143,9 +140,6 @@ export class RaidSimUI extends SimUI {
 	}
 
 	private recomputeSettingsLayout() {
-		if (this.settingsMuuri) {
-			//this.settingsMuuri.refreshItems();
-		}
 		window.dispatchEvent(new Event('resize'));
 	}
 

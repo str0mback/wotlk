@@ -43,6 +43,9 @@ func NewFeralDruid(character core.Character, options *proto.Player) *FeralDruid 
 	cat.maxRipTicks = cat.MaxRipTicks()
 	cat.prepopOoc = feralOptions.Options.PrepopOoc
 	cat.RaidBuffTargets = int(core.MaxInt32(feralOptions.Rotation.RaidTargets, 1))
+	if !feralOptions.Rotation.ManualParams {
+		cat.RaidBuffTargets = 30
+	}
 	cat.PrePopBerserk = feralOptions.Options.PrePopBerserk
 	cat.setupRotation(feralOptions.Rotation)
 
@@ -67,15 +70,17 @@ type FeralDruid struct {
 
 	Rotation FeralDruidRotation
 
-	prepopOoc      bool
-	missChance     float64
-	readyToShift   bool
-	readyToGift    bool
-	waitingForTick bool
-	latency        time.Duration
-	maxRipTicks    int32
-	berserkUsed    bool
-	bleedAura      *core.Aura
+	prepopOoc         bool
+	missChance        float64
+	readyToShift      bool
+	readyToGift       bool
+	waitingForTick    bool
+	latency           time.Duration
+	maxRipTicks       int32
+	berserkUsed       bool
+	bleedAura         *core.Aura
+	lastShift         time.Duration
+	ripRefreshPending bool
 
 	rotationAction *core.PendingAction
 }
@@ -91,19 +96,21 @@ func (cat *FeralDruid) MissChance() float64 {
 	return miss + dodge
 }
 
-func (cat *FeralDruid) Prepull(sim *core.Simulation) {
-	if cat.prepopOoc && cat.Talents.OmenOfClarity {
-		cat.ProcOoc(sim)
-		cat.ClearcastingAura.UpdateExpires(cat.ClearcastingAura.Duration - cat.SpellGCD())
-	}
-	if cat.PrePopBerserk && cat.Talents.Berserk {
-		cat.Berserk.CD.UsePrePull(sim, time.Second)
-	}
-}
-
 func (cat *FeralDruid) Initialize() {
 	cat.Druid.Initialize()
 	cat.RegisterFeralCatSpells()
+
+	if cat.prepopOoc && cat.Talents.OmenOfClarity {
+		cat.RegisterPrepullAction(-time.Second, func(sim *core.Simulation) {
+			cat.ProcOoc(sim)
+		})
+	}
+
+	if cat.PrePopBerserk && cat.Talents.Berserk {
+		cat.RegisterPrepullAction(-time.Second, func(sim *core.Simulation) {
+			cat.Berserk.Cast(sim, nil)
+		})
+	}
 }
 
 func (cat *FeralDruid) Reset(sim *core.Simulation) {

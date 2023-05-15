@@ -12,7 +12,7 @@ func (druid *Druid) registerMangleBearSpell() {
 		return
 	}
 
-	mangleAura := core.MangleAura(druid.CurrentTarget)
+	mangleAuras := druid.NewEnemyAuraArray(core.MangleAura)
 	durReduction := (0.5) * float64(druid.Talents.ImprovedMangle)
 	glyphBonus := core.TernaryFloat64(druid.HasMajorGlyph(proto.DruidMajorGlyph_GlyphOfMangle), 1.1, 1.0)
 
@@ -36,6 +36,9 @@ func (druid *Druid) registerMangleBearSpell() {
 				Duration: time.Duration(float64(time.Second) * (6 - durReduction)),
 			},
 		},
+		ExtraCastCondition: func(sim *core.Simulation, target *core.Unit) bool {
+			return druid.InForm(Bear)
+		},
 
 		DamageMultiplier: (1 + 0.1*float64(druid.Talents.SavageFury)) * 1.15 * glyphBonus,
 		CritMultiplier:   druid.MeleeCritMultiplier(Bear),
@@ -49,7 +52,7 @@ func (druid *Druid) registerMangleBearSpell() {
 			result := spell.CalcAndDealDamage(sim, target, baseDamage, spell.OutcomeMeleeSpecialHitAndCrit)
 
 			if result.Landed() {
-				mangleAura.Activate(sim)
+				mangleAuras.Get(target).Activate(sim)
 			} else {
 				spell.IssueRefund(sim)
 			}
@@ -66,7 +69,7 @@ func (druid *Druid) registerMangleCatSpell() {
 		return
 	}
 
-	mangleAura := core.MangleAura(druid.CurrentTarget)
+	mangleAuras := druid.NewEnemyAuraArray(core.MangleAura)
 	glyphBonus := core.TernaryFloat64(druid.HasMajorGlyph(proto.DruidMajorGlyph_GlyphOfMangle), 1.1, 1.0)
 
 	druid.MangleCat = druid.RegisterSpell(core.SpellConfig{
@@ -85,6 +88,9 @@ func (druid *Druid) registerMangleCatSpell() {
 			},
 			IgnoreHaste: true,
 		},
+		ExtraCastCondition: func(sim *core.Simulation, target *core.Unit) bool {
+			return druid.InForm(Cat)
+		},
 
 		DamageMultiplier: (1 + 0.1*float64(druid.Talents.SavageFury)) * 2.0 * glyphBonus,
 		CritMultiplier:   druid.MeleeCritMultiplier(Cat),
@@ -99,7 +105,7 @@ func (druid *Druid) registerMangleCatSpell() {
 
 			if result.Landed() {
 				druid.AddComboPoints(sim, 1, spell.ComboPointMetrics())
-				mangleAura.Activate(sim)
+				mangleAuras.Get(target).Activate(sim)
 			} else {
 				spell.IssueRefund(sim)
 			}
@@ -107,16 +113,8 @@ func (druid *Druid) registerMangleCatSpell() {
 	})
 }
 
-func (druid *Druid) CanMangleBear(sim *core.Simulation) bool {
-	return druid.MangleBear != nil && druid.InForm(Bear) && (druid.CurrentRage() >= druid.MangleBear.DefaultCast.Cost || druid.ClearcastingAura.IsActive()) && druid.MangleBear.IsReady(sim)
-}
-
-func (druid *Druid) CanMangleCat() bool {
-	return druid.MangleCat != nil && druid.InForm(Cat) && druid.CurrentEnergy() >= druid.CurrentMangleCatCost()
-}
-
 func (druid *Druid) CurrentMangleCatCost() float64 {
-	return druid.MangleCat.ApplyCostModifiers(druid.MangleCat.BaseCost)
+	return druid.MangleCat.ApplyCostModifiers(druid.MangleCat.DefaultCast.Cost)
 }
 
 func (druid *Druid) IsMangle(spell *core.Spell) bool {

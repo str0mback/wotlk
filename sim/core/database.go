@@ -202,9 +202,10 @@ func NewItem(itemSpec ItemSpec) Item {
 	if itemSpec.Enchant != 0 {
 		if enchant, ok := EnchantsByEffectID[itemSpec.Enchant]; ok {
 			item.Enchant = enchant
-		} else {
-			panic(fmt.Sprintf("No enchant with id: %d", itemSpec.Enchant))
 		}
+		// else {
+		// 	panic(fmt.Sprintf("No enchant with id: %d", itemSpec.Enchant))
+		// }
 	}
 
 	if len(itemSpec.Gems) > 0 {
@@ -318,6 +319,46 @@ const (
 	ItemSlotRanged
 )
 
+func (is ItemSlot) String() string {
+	switch is {
+	case ItemSlotHead:
+		return "Head"
+	case ItemSlotNeck:
+		return "Neck"
+	case ItemSlotShoulder:
+		return "Shoulder"
+	case ItemSlotBack:
+		return "Back"
+	case ItemSlotChest:
+		return "Chest"
+	case ItemSlotWrist:
+		return "Wrist"
+	case ItemSlotHands:
+		return "Hands"
+	case ItemSlotWaist:
+		return "Waist"
+	case ItemSlotLegs:
+		return "Legs"
+	case ItemSlotFeet:
+		return "Feet"
+	case ItemSlotFinger1:
+		return "Finger1"
+	case ItemSlotFinger2:
+		return "Finger2"
+	case ItemSlotTrinket1:
+		return "Trinket1"
+	case ItemSlotTrinket2:
+		return "Trinket2"
+	case ItemSlotMainHand:
+		return "MainHand"
+	case ItemSlotOffHand:
+		return "OffHand"
+	case ItemSlotRanged:
+		return "Ranged"
+	}
+	return "unknown slot"
+}
+
 func ItemTypeToSlot(it proto.ItemType) ItemSlot {
 	switch it {
 	case proto.ItemType_ItemTypeHead:
@@ -351,6 +392,43 @@ func ItemTypeToSlot(it proto.ItemType) ItemSlot {
 	}
 
 	return 255
+}
+
+// See getEligibleItemSlots in proto_utils/utils.ts.
+var itemTypeToSlotsMap = map[proto.ItemType][]proto.ItemSlot{
+	proto.ItemType_ItemTypeHead:     {proto.ItemSlot_ItemSlotHead},
+	proto.ItemType_ItemTypeNeck:     {proto.ItemSlot_ItemSlotNeck},
+	proto.ItemType_ItemTypeShoulder: {proto.ItemSlot_ItemSlotShoulder},
+	proto.ItemType_ItemTypeBack:     {proto.ItemSlot_ItemSlotBack},
+	proto.ItemType_ItemTypeChest:    {proto.ItemSlot_ItemSlotChest},
+	proto.ItemType_ItemTypeWrist:    {proto.ItemSlot_ItemSlotWrist},
+	proto.ItemType_ItemTypeHands:    {proto.ItemSlot_ItemSlotHands},
+	proto.ItemType_ItemTypeWaist:    {proto.ItemSlot_ItemSlotWaist},
+	proto.ItemType_ItemTypeLegs:     {proto.ItemSlot_ItemSlotLegs},
+	proto.ItemType_ItemTypeFeet:     {proto.ItemSlot_ItemSlotFeet},
+	proto.ItemType_ItemTypeFinger:   {proto.ItemSlot_ItemSlotFinger1, proto.ItemSlot_ItemSlotFinger2},
+	proto.ItemType_ItemTypeTrinket:  {proto.ItemSlot_ItemSlotTrinket1, proto.ItemSlot_ItemSlotTrinket2},
+	proto.ItemType_ItemTypeRanged:   {proto.ItemSlot_ItemSlotRanged},
+	// ItemType_ItemTypeWeapon is excluded intentionally - the slot cannot be decided based on type alone for weapons.
+}
+
+func eligibleSlotsForItem(item Item) []proto.ItemSlot {
+	if slots, ok := itemTypeToSlotsMap[item.Type]; ok {
+		return slots
+	}
+
+	if item.Type == proto.ItemType_ItemTypeWeapon {
+		switch item.HandType {
+		case proto.HandType_HandTypeTwoHand, proto.HandType_HandTypeMainHand:
+			return []proto.ItemSlot{proto.ItemSlot_ItemSlotMainHand}
+		case proto.HandType_HandTypeOffHand:
+			return []proto.ItemSlot{proto.ItemSlot_ItemSlotOffHand}
+		case proto.HandType_HandTypeOneHand:
+			return []proto.ItemSlot{proto.ItemSlot_ItemSlotMainHand, proto.ItemSlot_ItemSlotOffHand}
+		}
+	}
+
+	return nil
 }
 
 func ColorIntersects(g proto.GemColor, o proto.GemColor) bool {

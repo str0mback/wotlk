@@ -1,4 +1,4 @@
-import { getLanguageCode } from '../constants/lang.js';
+import { getWowheadLanguagePrefix } from '../constants/lang.js';
 import { ActionID as ActionIdProto } from '../proto/common.js';
 import { ResourceType } from '../proto/api.js';
 import { OtherAction } from '../proto/common.js';
@@ -133,8 +133,7 @@ export class ActionId {
 	}
 
 	static makeItemUrl(id: number): string {
-		const lang = getLanguageCode();
-		const langPrefix = lang ? lang + '/' : '';
+		const langPrefix = getWowheadLanguagePrefix();
 		if (USE_WOTLK_DB) {
 			return 'https://wotlkdb.com/?item=' + id;
 		} else {
@@ -142,12 +141,35 @@ export class ActionId {
 		}
 	}
 	static makeSpellUrl(id: number): string {
-		const lang = getLanguageCode();
-		const langPrefix = lang ? lang + '/' : '';
+		const langPrefix = getWowheadLanguagePrefix();
 		if (USE_WOTLK_DB) {
 			return 'https://wotlkdb.com/?spell=' + id;
 		} else {
 			return `https://wowhead.com/wotlk/${langPrefix}spell=${id}`;
+		}
+	}
+	static makeQuestUrl(id: number): string {
+		const langPrefix = getWowheadLanguagePrefix();
+		if (USE_WOTLK_DB) {
+			return 'https://wotlkdb.com/?quest=' + id;
+		} else {
+			return `https://wowhead.com/wotlk/${langPrefix}quest=${id}`;
+		}
+	}
+	static makeNpcUrl(id: number): string {
+		const langPrefix = getWowheadLanguagePrefix();
+		if (USE_WOTLK_DB) {
+			return 'https://wotlkdb.com/?npc=' + id;
+		} else {
+			return `https://wowhead.com/wotlk/${langPrefix}npc=${id}`;
+		}
+	}
+	static makeZoneUrl(id: number): string {
+		const langPrefix = getWowheadLanguagePrefix();
+		if (USE_WOTLK_DB) {
+			return 'https://wotlkdb.com/?zone=' + id;
+		} else {
+			return `https://wowhead.com/wotlk/${langPrefix}zone=${id}`;
 		}
 	}
 
@@ -217,14 +239,14 @@ export class ActionId {
 					name += ' (3 Tick)';
 				}
 				break;
-			case 'Envenom':
-			case 'Eviscerate':
-			case 'Expose Armor':
 			case 'Shattering Throw':
 				if (this.tag === playerIndex) {
 					name += ` (self)`;
 				}
 				break;
+			case 'Envenom':
+			case 'Eviscerate':
+			case 'Expose Armor':
 			case 'Rupture':
 			case 'Slice and Dice':
 				if (this.tag) name += ` (${this.tag} CP)`;
@@ -258,11 +280,9 @@ export class ActionId {
 					name += ` (${this.tag} MW)`;
 				}
 				break;
-			case 'Holy Vengeance':
+			case 'Holy Shield':
 				if (this.tag == 1) {
-					name += ' (Swing Roll)'
-				} else if (this.tag == 2) {
-					name += ' (DoT)'
+					name += ' (Proc)';
 				}
 				break;
 			case 'Righteous Vengeance':
@@ -272,9 +292,11 @@ export class ActionId {
 					name += ' (DoT)'
 				}
 				break;
-			case 'Holy Shield':
+			case 'Holy Vengeance':
 				if (this.tag == 1) {
-					name += ' (Proc)';
+						name += ' (Application)'
+				} else if (this.tag == 2) {
+					name += ' (DoT)'
 				}
 				break;
 			// For targetted buffs, tag is the source player's raid index or -1 if none.
@@ -299,6 +321,13 @@ export class ActionId {
 					name += ' (Spell)';
 				}
 				break;
+			case 'Frozen Blows':
+				if (this.tag == 1) {
+					name += ' (Physical)';
+				} else if (this.tag == 2) {
+					name += ' (Frost)';
+				}
+				break;
 			case 'Scourge Strike':
 				if (this.tag == 1) {
 					name += ' (Physical)';
@@ -306,6 +335,14 @@ export class ActionId {
 					name += ' (Shadow)';
 				}
 				break;
+			case 'Heart Strike':
+				/*if (this.tag == 1) {
+					name += ' (Physical)';
+				} else */if (this.tag == 2) {
+					name += ' (Off-target)';
+				}
+				break;
+			case 'Rune Strike':
 			case 'Frost Strike':
 			case 'Plague Strike':
 			case 'Blood Strike':
@@ -314,6 +351,7 @@ export class ActionId {
 			case 'Blood-Caked Strike':
 			case 'Lightning Speed':
 			case 'Windfury Weapon':
+			case 'Berserk':
 				if (this.tag == 1) {
 					name += ' (Main Hand)';
 				} else if (this.tag == 2) {
@@ -499,6 +537,9 @@ const petNameToActionId: Record<string, ActionId> = {
 	'Spirit Wolf 2': ActionId.fromSpellId(51533),
 	'Rune Weapon': ActionId.fromSpellId(49028),
 	'Bloodworm': ActionId.fromSpellId(50452),
+	'Gargoyle': ActionId.fromSpellId(49206),
+	'Ghoul': ActionId.fromSpellId(46584),
+	'Army of the Dead': ActionId.fromSpellId(42650),
 };
 
 // https://wowhead.com/wotlk/hunter-pets
@@ -518,9 +559,6 @@ const petNameToIcon: Record<string, string> = {
 	'Felguard': 'https://wow.zamimg.com/images/wow/icons/large/spell_shadow_summonfelguard.jpg',
 	'Felhunter': 'https://wow.zamimg.com/images/wow/icons/large/spell_shadow_summonfelhunter.jpg',
 	'Infernal': 'https://wow.zamimg.com/images/wow/icons/large/spell_shadow_summoninfernal.jpg',
-	'Gargoyle': 'https://wow.zamimg.com/images/wow/icons/large/ability_hunter_pet_bat.jpg',
-	'Ghoul': 'https://wow.zamimg.com/images/wow/icons/large/spell_shadow_raisedead.jpg',
-	'Army of the Dead': 'https://wow.zamimg.com/images/wow/icons/large/spell_deathknight_armyofthedead.jpg',
 	'Gorilla': 'https://wow.zamimg.com/images/wow/icons/medium/ability_hunter_pet_gorilla.jpg',
 	'Hyena': 'https://wow.zamimg.com/images/wow/icons/medium/ability_hunter_pet_hyena.jpg',
 	'Imp': 'https://wow.zamimg.com/images/wow/icons/large/spell_shadow_summonimp.jpg',
